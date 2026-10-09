@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.0.4';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -41,6 +41,8 @@ const I = (n, a = '') => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" 
 /* ---------- data (this phone) ---------- */
 let S = null;
 const DEFAULT_LISTS = ['Home', 'Shopping'];
+// 1.0.4: Home and Shopping are fixed: they can't be renamed or deleted (Shopping goes onto Shane's shopping list).
+const isFixedList = l => DEFAULT_LISTS.includes(l);
 const blank = () => ({ version: 1, todos: [], lists: DEFAULT_LISTS.slice(), settings: {} });
 function normalise(d) {
   d = d && typeof d === 'object' ? d : {};
@@ -55,7 +57,8 @@ function normalise(d) {
     if (!d.lists.length) d.lists = DEFAULT_LISTS.slice();
     st.errandsGone = true;
   }
-  d.todos.forEach(t => { if (!d.lists.includes(t.list)) d.lists.push(t.list || 'Home'); if (!t.list) t.list = d.lists[0]; });
+  d.lists = [...DEFAULT_LISTS, ...d.lists.filter(l => !isFixedList(l))]; // put back Home or Shopping if missing
+  d.todos.forEach(t => { if (!t.list) t.list = 'Home'; if (!d.lists.includes(t.list)) d.lists.push(t.list); });
   d.settings = { shared: st.shared && typeof st.shared === 'object' ? st.shared : {}, errandsGone: true };
   d.version = 1;
   return d;
@@ -188,7 +191,8 @@ function Todo() {
   return header('To-do', openCount ? plural(openCount, 'thing') + ' to do' : 'Nothing to do', themeDots() + addBtn('Add a to-do', 'todoForm()')) +
     `<div class="chips">${['All', ...S.lists].map(l => `<button class="chip ${l === todoFilter ? 'on' : ''}" onclick="setTodoFilter(${jsArg(l)})">${esc(l)}</button>`).join('')}
       <button class="chip plus" onclick="listForm()">+ New list</button></div>
-    ${todoFilter !== 'All' ? `<div style="display:flex;gap:18px;margin:-2px 4px 10px;font-size:0.875rem;font-weight:600"><button style="color:var(--brand);padding:4px 0" onclick="listForm(${jsArg(todoFilter)})">Rename list</button><button style="color:var(--red);padding:4px 0" onclick="deleteList(${jsArg(todoFilter)})">Delete list</button></div>` : ''}
+    ${todoFilter === 'Shopping' ? `<div class="muted" id="shopnote" style="margin:-2px 4px 10px;font-size:0.84375rem">These also go on Shane’s shopping list.</div>` : ''}
+    ${todoFilter !== 'All' && !isFixedList(todoFilter) ? `<div style="display:flex;gap:18px;margin:-2px 4px 10px;font-size:0.875rem;font-weight:600"><button style="color:var(--brand);padding:4px 0" onclick="listForm(${jsArg(todoFilter)})">Rename list</button><button style="color:var(--red);padding:4px 0" onclick="deleteList(${jsArg(todoFilter)})">Delete list</button></div>` : ''}
     <form class="addbar" onsubmit="quickAdd(event)"><input id="newtodo" placeholder="Add a to-do${todoFilter !== 'All' ? ' to ' + esc(todoFilter) : ''}…" autocomplete="off" enterkeyhint="done" maxlength="120" aria-label="New to-do"><button aria-label="Add">${I('plus')}</button></form>
     ${open.length ? `<div class="list" id="openlist">${open.map(row).join('')}</div>` : (S.todos.length ? '<div class="card empty"><div class="t">All done. Good as gold!</div></div>' : empty('Nothing on your list', 'Type a to-do above and tap +, or add one with a due date.', 'Add a to-do', 'todoForm()'))}
     ${done.length ? `<div class="sec">Done <button onclick="clearDone()">Clear done</button></div><div class="list" id="donelist">${done.map(row).join('')}</div>` : ''}
@@ -241,16 +245,18 @@ async function deleteTodo(id) {
   const s = snap(); S.todos = S.todos.filter(x => x.id !== id); await save(); await closeSheet(); render(); toast('To-do deleted.', 'Undo', undoTo(s));
 }
 function listForm(name) {
+  if (name && isFixedList(name)) { toast('The ' + name + ' list can’t be renamed.'); return; }
   openSheet(name ? 'Rename list' : 'New list', field('List name', inp('name', name || '', 'placeholder="e.g. Garden" required maxlength="24"')), async v => {
     if (!v.name) return 'Please type a name.';
     if (v.name === 'All') return 'Please pick a different name.';
-    if (S.lists.includes(v.name) && v.name !== name) return 'You already have a list with that name.';
+    if (S.lists.some(l => l.toLowerCase() === v.name.toLowerCase() && l !== name)) return 'You already have a list with that name.';
     if (name) { S.lists = S.lists.map(l => l === name ? v.name : l); S.todos.forEach(t => { if (t.list === name) t.list = v.name; }); }
     else S.lists.push(v.name);
     todoFilter = v.name; await save(); render();
   }, name ? 'Save' : 'Add list');
 }
 function deleteList(name) {
+  if (isFixedList(name)) { toast('The ' + name + ' list can’t be deleted.'); return; }
   if (S.lists.length <= 1) { toast('You need at least one list.'); return; }
   const n = S.todos.filter(t => t.list === name).length;
   const dest = S.lists.find(l => l !== name);
