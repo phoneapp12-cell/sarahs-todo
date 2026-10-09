@@ -6,6 +6,8 @@
 <title>Sarah's To-do</title>
 <meta name="description" content="Sarah's to-do list, shared with Shane.">
 <meta name="theme-color" content="#DB2777">
+<script>/* colour choice, saved on this phone only; set before the page draws */
+try { var t = localStorage.getItem('sarahsTodo.theme'); if (t === 'purple') { document.documentElement.setAttribute('data-theme', 'purple'); document.querySelector('meta[name=theme-color]').setAttribute('content', '#6D3FC4'); } } catch (e) { }</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -32,7 +34,7 @@
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;}
 html[data-theme="blue"]{--bg:#F3F5F9;--desk:#DCE2EC;--line:#E2E7EF;--brand:#1D5FBF;--brand2:#E6EEFA;--branddk:#174C99;--focus:rgba(29,95,191,.2);--chart:#A9C4EC;--toastbtn:#9CC3FF;--soft:#F5F7FA;--soft2:#ECF0F6;--soft3:#EEF2F7;--btn:#E6ECF5}
 html[data-theme="green"]{--bg:#F3F6F2;--desk:#DCE4DA;--line:#E2E9E0;--brand:#2E7D32;--brand2:#E7F4E8;--branddk:#23612A;--focus:rgba(46,125,50,.2);--chart:#B2D8B4;--toastbtn:#9FE3A3;--soft:#F5F8F4;--soft2:#EDF2EC;--soft3:#EFF3EE;--btn:#E6EEE5}
-html[data-theme="pink"]{--bg:#F6F4FA;--desk:#E3DEEE;--line:#E8E3F1;--brand:#6D3FC4;--brand2:#EFE9FB;--branddk:#56309E;--focus:rgba(109,63,196,.2);--chart:#CDB9F1;--toastbtn:#C9B2FF;--soft:#F8F6FB;--soft2:#F0ECF7;--soft3:#F2EFF8;--btn:#ECE7F5}
+html[data-theme="purple"]{--bg:#F6F4FA;--desk:#E3DEEE;--line:#E8E3F1;--brand:#6D3FC4;--brand2:#EFE9FB;--branddk:#56309E;--focus:rgba(109,63,196,.2);--chart:#CDB9F1;--toastbtn:#C9B2FF;--soft:#F8F6FB;--soft2:#F0ECF7;--soft3:#F2EFF8;--btn:#ECE7F5}
 html[data-theme="pink"]{--bg:#FBF4F7;--desk:#F0DCE5;--line:#F1E2E9;--brand:#DB2777;--brand2:#FCE7F1;--branddk:#B01E61;--focus:rgba(219,39,119,.2);--chart:#F6B6D2;--toastbtn:#FFA8CF;--soft:#FCF6F9;--soft2:#F7ECF1;--soft3:#F9F0F4;--btn:#F6E6EE}
 html[data-theme="orange"]{--bg:#F8F5F2;--desk:#EAE1D9;--line:#EDE5DE;--brand:#B4530A;--brand2:#FCEEE2;--branddk:#8F4208;--focus:rgba(180,83,10,.2);--chart:#F2C9A6;--toastbtn:#FFC08A;--soft:#FAF7F4;--soft2:#F3EEE9;--soft3:#F5F0EB;--btn:#F1E9E2}
 html[data-theme="dark"]{color-scheme:dark;
@@ -250,6 +252,13 @@ html[data-theme="dark"] .ic.note{background:#1E3A5F;color:#BFDBFE}
 .done .t{text-decoration:line-through;color:var(--ink3)}
 .tapzone{flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left}
 .pill.soon{color:var(--amber);background:var(--amberbg)} .pill.fine{color:var(--green);background:var(--greenbg)}
+.themepick{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px 0 0;font-size:0.8125rem;color:var(--ink2);font-weight:650}
+.swatch{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 12px 6px 6px;background:var(--card);box-shadow:0 1px 2px rgba(0,0,0,.08);font:inherit;font-weight:700;color:var(--ink);border:2px solid transparent;cursor:pointer}
+.swatch i{width:20px;height:20px;border-radius:50%;display:inline-block}
+.swatch.on{border-color:var(--brand)}
+.themedots{display:flex;gap:6px;align-items:center;margin-right:4px}
+.tdot{width:26px;height:26px;border-radius:50%;border:3px solid var(--card);box-shadow:0 0 0 1px var(--line);cursor:pointer;padding:0}
+.tdot.on{box-shadow:0 0 0 2px var(--ink)}
 </style>
 </head>
 <body>

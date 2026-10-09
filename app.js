@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -178,13 +178,14 @@ function Todo() {
     <button class="tapzone" onclick="todoForm('${t.id}')"><div class="tx"><div class="t">${esc(t.title)}</div><div class="s">${esc(t.list)}${t.done ? '' : todoPriMark(t)}${t.due && !t.done ? ' · ' + fmtW(t.due) : ''}${!t.due && !t.done ? ' · no date' : ''}</div></div>
     ${t.due && !t.done ? pill(daysLeft(t.due)) : ''}</button></div>`;
   const openCount = S.todos.filter(t => !t.done).length;
-  return header('To-do', openCount ? plural(openCount, 'thing') + ' to do' : 'Nothing to do', addBtn('Add a to-do', 'todoForm()')) +
+  return header('To-do', openCount ? plural(openCount, 'thing') + ' to do' : 'Nothing to do', themeDots() + addBtn('Add a to-do', 'todoForm()')) +
     `<div class="chips">${['All', ...S.lists].map(l => `<button class="chip ${l === todoFilter ? 'on' : ''}" onclick="setTodoFilter(${jsArg(l)})">${esc(l)}</button>`).join('')}
       <button class="chip plus" onclick="listForm()">+ New list</button></div>
     ${todoFilter !== 'All' ? `<div style="display:flex;gap:18px;margin:-2px 4px 10px;font-size:0.875rem;font-weight:600"><button style="color:var(--brand);padding:4px 0" onclick="listForm(${jsArg(todoFilter)})">Rename list</button><button style="color:var(--red);padding:4px 0" onclick="deleteList(${jsArg(todoFilter)})">Delete list</button></div>` : ''}
     <form class="addbar" onsubmit="quickAdd(event)"><input id="newtodo" placeholder="Add a to-do${todoFilter !== 'All' ? ' to ' + esc(todoFilter) : ''}…" autocomplete="off" enterkeyhint="done" maxlength="120" aria-label="New to-do"><button aria-label="Add">${I('plus')}</button></form>
     ${open.length ? `<div class="list" id="openlist">${open.map(row).join('')}</div>` : (S.todos.length ? '<div class="card empty"><div class="t">All done. Good as gold!</div></div>' : empty('Nothing on your list', 'Type a to-do above and tap +, or add one with a due date.', 'Add a to-do', 'todoForm()'))}
     ${done.length ? `<div class="sec">Done <button onclick="clearDone()">Clear done</button></div><div class="list" id="donelist">${done.map(row).join('')}</div>` : ''}
+    ${themePicker()}
     <div class="foot" id="syncline">${esc(syncLine())}<br>Your to-dos show on Shane’s list too, and he can tick them off. ${S.todos.length ? '' : ''}Sarah’s To-do ${APP_VERSION}</div>`;
 }
 function setTodoFilter(l) { todoFilter = l; render(); }
@@ -399,6 +400,29 @@ async function installApp() {
   render();
 }
 
+/* ================= COLOUR (1.0.1) ================= */
+// Pink or purple, saved on this phone only (not shared with Shane's app).
+const THEMES = { pink: ['Pink', '#DB2777'], purple: ['Purple', '#6D3FC4'] };
+const THEME_KEY = 'sarahsTodo.theme';
+function curTheme() { try { return localStorage.getItem(THEME_KEY) === 'purple' ? 'purple' : 'pink'; } catch (e) { return 'pink'; } }
+function applyTheme(k) {
+  document.documentElement.setAttribute('data-theme', k);
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', THEMES[k][1]);
+}
+function themePicker() {
+  const c = curTheme();
+  return `<div class="themepick" id="themepick" role="radiogroup" aria-label="Colour">Colour${Object.entries(THEMES).map(([k, [l, hex]]) => `<button type="button" class="swatch ${k === c ? 'on' : ''}" role="radio" aria-checked="${k === c}" data-theme-pick="${k}" onclick="setTheme('${k}')"><i style="background:${hex}"></i>${l}</button>`).join('')}</div>`;
+}
+function themeDots() { // small pink/purple dots at the top, next to +
+  const c = curTheme();
+  return `<div class="themedots" role="radiogroup" aria-label="Colour">${Object.entries(THEMES).map(([k, [l, hex]]) => `<button type="button" class="tdot ${k === c ? 'on' : ''}" role="radio" aria-checked="${k === c}" aria-label="${l} colour" title="${l}" data-theme-dot="${k}" onclick="setTheme('${k}')" style="background:${hex}"></button>`).join('')}</div>`;
+}
+function setTheme(k) {
+  if (!THEMES[k]) return;
+  try { localStorage.setItem(THEME_KEY, k); } catch (e) { }
+  applyTheme(k); render();
+}
+
 /* ================= START ================= */
 function render() {
   if (!S) return;
@@ -409,6 +433,7 @@ function render() {
 let renderedDay = todayISO();
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && todayISO() !== renderedDay && !sheetOpen) { renderedDay = todayISO(); render(); } });
 window.addEventListener('offline', () => { sharedErr = 'offline'; if (!sheetOpen) render(); });
+applyTheme(curTheme());
 load();
 render();
 sharedStart();
