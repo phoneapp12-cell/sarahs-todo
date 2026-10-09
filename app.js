@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.0.3';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -433,11 +433,20 @@ function setTheme(k) {
 }
 
 /* ================= START ================= */
+/* Greeting at the top, by the phone's own clock (1.0.3) */
+function greetWord(now = new Date()) { const h = now.getHours(); return h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : 'evening'; }
+const greetText = () => 'Good ' + greetWord() + ', Sarah';
+const greetCard = () => `<div class="greet" id="greethi">${esc(greetText())}</div>`;
+let greetBand = greetWord();
+function greetTick() { const b = greetWord(); if (b === greetBand) return; greetBand = b; const el = document.getElementById('greethi'); if (el) el.textContent = greetText(); }
+setInterval(greetTick, 30000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') greetTick(); });
+
 function render() {
   if (!S) return;
   let page = '';
   try { page = Todo(); } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
-  $('#view').innerHTML = installCard() + page;
+  $('#view').innerHTML = greetCard() + installCard() + page;
 }
 let renderedDay = todayISO();
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && todayISO() !== renderedDay && !sheetOpen) { renderedDay = todayISO(); render(); } });
