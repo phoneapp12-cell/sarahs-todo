@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -40,16 +40,23 @@ const I = (n, a = '') => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" 
 
 /* ---------- data (this phone) ---------- */
 let S = null;
-const DEFAULT_LISTS = ['Home', 'Shopping', 'Errands'];
+const DEFAULT_LISTS = ['Home', 'Shopping'];
 const blank = () => ({ version: 1, todos: [], lists: DEFAULT_LISTS.slice(), settings: {} });
 function normalise(d) {
   d = d && typeof d === 'object' ? d : {};
   d.todos = (Array.isArray(d.todos) ? d.todos : []).filter(t => t && typeof t === 'object' && t.id && t.title);
   d.lists = (Array.isArray(d.lists) ? d.lists : []).map(String).filter((l, i, a) => l && a.indexOf(l) === i);
   if (!d.lists.length) d.lists = DEFAULT_LISTS.slice();
-  d.todos.forEach(t => { if (!d.lists.includes(t.list)) d.lists.push(t.list || 'Home'); if (!t.list) t.list = d.lists[0]; });
   const st = d.settings && typeof d.settings === 'object' ? d.settings : {};
-  d.settings = { shared: st.shared && typeof st.shared === 'object' ? st.shared : {} };
+  // 1.0.2: the built-in Errands list is gone. Once only: anything on it moves to Home (nothing is deleted).
+  if (!st.errandsGone) {
+    if (d.todos.some(t => t.list === 'Errands')) { if (!d.lists.includes('Home')) d.lists.unshift('Home'); d.todos.forEach(t => { if (t.list === 'Errands') t.list = 'Home'; }); }
+    d.lists = d.lists.filter(l => l !== 'Errands');
+    if (!d.lists.length) d.lists = DEFAULT_LISTS.slice();
+    st.errandsGone = true;
+  }
+  d.todos.forEach(t => { if (!d.lists.includes(t.list)) d.lists.push(t.list || 'Home'); if (!t.list) t.list = d.lists[0]; });
+  d.settings = { shared: st.shared && typeof st.shared === 'object' ? st.shared : {}, errandsGone: true };
   d.version = 1;
   return d;
 }
@@ -253,13 +260,15 @@ function deleteList(name) {
   });
 }
 // Hooks for the shared sync: every to-do in this app is shared.
+// Errands was removed in 1.0.2: an old Errands item coming back from the shared list lands on Home (unless she made her own Errands list)
+const listIn = l => l === 'Errands' && !S.lists.includes('Errands') ? (S.lists.includes('Home') ? 'Home' : S.lists[0]) : l;
 const SH = {
   state: () => S.settings.shared,
   items: () => S.todos,
   by: () => 'sarah',
   want: () => true,
-  add: s => { S.todos.push({ id: s.id, title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done, doneAt: s.doneAt || undefined, created: s.created }); if (!S.lists.includes(s.list)) S.lists.push(s.list); },
-  update: (t, s) => { Object.assign(t, { title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done }); if (s.done) t.doneAt = s.doneAt || Date.now(); else delete t.doneAt; if (!S.lists.includes(s.list)) S.lists.push(s.list); },
+  add: s => { s = Object.assign({}, s, { list: listIn(s.list) }); S.todos.push({ id: s.id, title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done, doneAt: s.doneAt || undefined, created: s.created }); if (!S.lists.includes(s.list)) S.lists.push(s.list); },
+  update: (t, s) => { s = Object.assign({}, s, { list: listIn(s.list) }); Object.assign(t, { title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done }); if (s.done) t.doneAt = s.doneAt || Date.now(); else delete t.doneAt; if (!S.lists.includes(s.list)) S.lists.push(s.list); },
   remove: id => { S.todos = S.todos.filter(t => t.id !== id); },
   persist: async changed => {
     sharedApplying = true;

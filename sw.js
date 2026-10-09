@@ -1,5 +1,5 @@
 /* Sarah's To-do service worker: keeps the app working offline. No push, no tracking. (The shared list itself goes straight to the relay, not through here.) */
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const CACHE = 'sarahs-todo-' + VERSION;
 const SHELL = ['./', 'index.html', 'app.js', 'core.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
 self.addEventListener('install', e => {
