@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.1.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -197,7 +197,7 @@ function Todo() {
     ${open.length ? `<div class="list" id="openlist">${open.map(row).join('')}</div>` : (S.todos.length ? '<div class="card empty"><div class="t">All done. Good as gold!</div></div>' : empty('Nothing on your list', 'Type a to-do above and tap +, or add one with a due date.', 'Add a to-do', 'todoForm()'))}
     ${done.length ? `<div class="sec">Done <button onclick="clearDone()">Clear done</button></div><div class="list" id="donelist">${done.map(row).join('')}</div>` : ''}
     ${themePicker()}
-    <div class="foot" id="syncline">${esc(syncLine())}<br>Your to-dos show on Shane’s list too, and he can tick them off. ${S.todos.length ? '' : ''}Sarah’s To-do ${APP_VERSION}</div>`;
+    <div class="foot" id="syncline">${esc(syncLine())}<br>Your to-dos show on Shane’s list too, and he can tick them off. ${S.todos.length ? '' : ''}Sarah’s To-do ${APP_VERSION}</div><div class="foot" id="notifyline" style="margin-top:-6px">${notifyLine()}</div>`;
 }
 function setTodoFilter(l) { todoFilter = l; render(); }
 async function quickAdd(e) {
@@ -438,6 +438,65 @@ function setTheme(k) {
   applyTheme(k); render();
 }
 
+/* ================= NOTIFICATIONS (1.1.0) =================
+   Optional. If she turns them on, the phone's push address goes to the relay (with the shared list key) and
+   the app can show the odd short note, now and then, during the day. Turning them off removes the address. */
+const SUN_BASE = 'https://due-dates-calendar-relay.phoneapp12.workers.dev/sunshine/';
+const VAPID_PUBLIC = 'BEsNn0TcOiNQqSE7AbDFgYGL_v45EEm-mma2_6DtecoG5c7ZvwZ7lKpAXOQry7cqfvWM0JTjtPPdK93arc0VXMU';
+const NOTE_KEY = 'sarahsTodo.notify';
+const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && (!isIOS() || isStandalone());
+function noteSt() { try { return JSON.parse(localStorage.getItem(NOTE_KEY) || '{}') || {}; } catch (e) { return {}; } }
+function noteSave(o) { try { localStorage.setItem(NOTE_KEY, JSON.stringify(o)); } catch (e) { } }
+const notifyIsOn = () => pushOk() && Notification.permission === 'granted' && !!noteSt().on;
+let noteBusy = false;
+function notifyCard() {
+  if (!pushOk() || notifyIsOn() || Notification.permission === 'denied' || noteSt().hide) return '';
+  return `<div class="card installcard" id="notifycard"><div><div class="t" style="font-weight:700">Turn on notifications?</div>
+    <div class="muted">Let Sarah’s To-do send you the odd little note during the day.</div></div>
+    <div style="display:flex;flex-direction:column;gap:6px;flex:none"><button class="btn primary small" id="notifyon" onclick="notifyOn()">Turn on</button><button class="btn small" onclick="notifyLater()">Not now</button></div></div>`;
+}
+function notifyLater() { const o = noteSt(); o.hide = true; noteSave(o); render(); }
+function notifyLine() {
+  if (!pushOk()) return '';
+  if (notifyIsOn()) return `Notifications on · <button class="linkbtn" onclick="notifyOff()">Turn off</button>`;
+  if (Notification.permission === 'denied') return 'Notifications are blocked in your phone settings for this app.';
+  return `<button class="linkbtn" onclick="notifyOn()">Turn on notifications</button>`;
+}
+const keyBytes = k => Uint8Array.from(atob(k.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - k.length % 4) % 4)), c => c.charCodeAt(0));
+async function sunPost(path, body) {
+  const r = await fetch(SUN_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ key: SHARED_KEY }, body)) });
+  if (!r.ok) throw new Error('http ' + r.status); return r.json();
+}
+async function pushSub() {
+  const reg = await navigator.serviceWorker.ready;
+  return (await reg.pushManager.getSubscription()) || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(VAPID_PUBLIC) });
+}
+async function notifyOn() {
+  if (noteBusy || !pushOk()) return; noteBusy = true;
+  try {
+    const p = await Notification.requestPermission();
+    if (p !== 'granted') { toast(p === 'denied' ? 'Notifications are blocked. You can allow them in your phone settings.' : 'Notifications stay off.'); return; }
+    const sub = await pushSub();
+    await sunPost('subscribe', { subscription: sub.toJSON() });
+    noteSave({ on: true, at: Date.now() }); toast('Notifications are on.');
+  } catch (e) { toast(navigator.onLine === false ? 'You’re offline. Try again when you have signal.' : 'Sorry, notifications couldn’t be turned on. Try again later.'); }
+  finally { noteBusy = false; render(); }
+}
+async function notifyOff() {
+  try { const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription(); if (sub) { try { await sunPost('unsubscribe', { endpoint: sub.endpoint }); } catch (e) { } await sub.unsubscribe(); } } catch (e) { }
+  noteSave({ on: false, hide: true }); render(); toast('Notifications are off.');
+}
+// Once a day while on: make sure the relay still has this phone's current push address (it can change)
+async function notifyRefresh() {
+  try {
+    if (!notifyIsOn() || navigator.onLine === false) return;
+    const o = noteSt(); if (o.checked === todayISO()) return;
+    const sub = await pushSub();
+    await sunPost('subscribe', { subscription: sub.toJSON(), quiet: true });
+    o.checked = todayISO(); noteSave(o);
+  } catch (e) { }
+}
+
 /* ================= START ================= */
 /* Greeting at the top, by the phone's own clock (1.0.3) */
 function greetWord(now = new Date()) { const h = now.getHours(); return h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : 'evening'; }
@@ -452,7 +511,7 @@ function render() {
   if (!S) return;
   let page = '';
   try { page = Todo(); } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
-  $('#view').innerHTML = greetCard() + installCard() + page;
+  $('#view').innerHTML = greetCard() + installCard() + notifyCard() + page;
 }
 let renderedDay = todayISO();
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && todayISO() !== renderedDay && !sheetOpen) { renderedDay = todayISO(); render(); } });
@@ -461,5 +520,6 @@ applyTheme(curTheme());
 load();
 render();
 sharedStart();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => notifyRefresh()).catch(() => { });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') notifyRefresh(); });
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { }
