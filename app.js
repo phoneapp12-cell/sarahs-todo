@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -43,6 +43,8 @@ let S = null;
 const DEFAULT_LISTS = ['Home', 'Shopping'];
 // 1.0.4: Home and Shopping are fixed: they can't be renamed or deleted (Shopping goes onto Shane's shopping list).
 const isFixedList = l => DEFAULT_LISTS.includes(l);
+// 1.1.1: to-dos Shane shares from his app have a blue S
+const shaneBadge = t => t && t.by === 'shane' ? '<span class="bbadge" title="From Shane" aria-label="From Shane">S</span>' : '';
 const blank = () => ({ version: 1, todos: [], lists: DEFAULT_LISTS.slice(), settings: {} });
 function normalise(d) {
   d = d && typeof d === 'object' ? d : {};
@@ -185,7 +187,7 @@ function Todo() {
   const open = vis.filter(t => !t.done).sort(cmpOpenTodo);
   const done = vis.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
   const row = t => `<div class="row ${t.done ? 'done' : ''}" data-id="${esc(t.id)}"><button type="button" class="tick" aria-label="${t.done ? 'Mark not done' : 'Mark complete'}: ${esc(t.title)}" onclick="tick('${t.id}')"><span>${I('check')}</span></button>
-    <button class="tapzone" onclick="todoForm('${t.id}')"><div class="tx"><div class="t">${esc(t.title)}</div><div class="s">${esc(t.list)}${t.done ? '' : todoPriMark(t)}${t.due && !t.done ? ' · ' + fmtW(t.due) : ''}${!t.due && !t.done ? ' · no date' : ''}</div></div>
+    <button class="tapzone" onclick="todoForm('${t.id}')"><div class="tx"><div class="t">${shaneBadge(t)}${esc(t.title)}</div><div class="s">${esc(t.list)}${t.done ? '' : todoPriMark(t)}${t.due && !t.done ? ' · ' + fmtW(t.due) : ''}${!t.due && !t.done ? ' · no date' : ''}</div></div>
     ${t.due && !t.done ? pill(daysLeft(t.due)) : ''}</button></div>`;
   const openCount = S.todos.filter(t => !t.done).length;
   return header('To-do', openCount ? plural(openCount, 'thing') + ' to do' : 'Nothing to do', themeDots() + addBtn('Add a to-do', 'todoForm()')) +
@@ -230,6 +232,7 @@ function todoForm(id) {
     `<div class="two">${field('List', sel('list', S.lists.map(l => [l, l]), t.list))}${field('Priority', sel('priority', [['high', 'High'], ['normal', 'Normal'], ['low', 'Low']], todoPriority(t)))}</div>` +
     field('Due date', inp('due', t.due, 'type="date"'), 'Optional') +
     field('Notes', area('notes', t.notes)) +
+    (t.by === 'shane' ? `<p class="muted" id="shanenote" style="margin:4px 2px 0">${shaneBadge(t)} Shane added this from his list. Ticks and changes go back to him.</p>` : '') +
     (id ? `<div class="btns" style="margin-top:4px"><button type="button" class="btn" onclick="tick('${id}')">${I('check')} ${t.done ? 'Mark not done' : 'Mark complete'}</button></div>` : ''),
     async v => {
       if (!v.title) return 'Please type the to-do.';
@@ -271,9 +274,9 @@ const listIn = l => l === 'Errands' && !S.lists.includes('Errands') ? (S.lists.i
 const SH = {
   state: () => S.settings.shared,
   items: () => S.todos,
-  by: () => 'sarah',
+  by: t => t && t.by === 'shane' ? 'shane' : 'sarah',
   want: () => true,
-  add: s => { s = Object.assign({}, s, { list: listIn(s.list) }); S.todos.push({ id: s.id, title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done, doneAt: s.doneAt || undefined, created: s.created }); if (!S.lists.includes(s.list)) S.lists.push(s.list); },
+  add: s => { s = Object.assign({}, s, { list: listIn(s.list) }); S.todos.push(Object.assign({ id: s.id, title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done, doneAt: s.doneAt || undefined, created: s.created }, s.by === 'shane' ? { by: 'shane' } : {})); if (!S.lists.includes(s.list)) S.lists.push(s.list); },
   update: (t, s) => { s = Object.assign({}, s, { list: listIn(s.list) }); Object.assign(t, { title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done }); if (s.done) t.doneAt = s.doneAt || Date.now(); else delete t.doneAt; if (!S.lists.includes(s.list)) S.lists.push(s.list); },
   remove: id => { S.todos = S.todos.filter(t => t.id !== id); },
   persist: async changed => {
