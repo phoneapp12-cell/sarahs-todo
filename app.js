@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.1.2';
+const APP_VERSION = '1.2.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,6 +31,7 @@ const P = {
   tv: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 21h8M9 2l3 4 3-4"/>',
   umbrella: '<path d="M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9zM12 12v7a2 2 0 0 0 4 0"/>',
   wifi: '<path d="M5 12.55a11 11 0 0 1 14 0M8.5 16a6 6 0 0 1 7 0M2 8.8a16 16 0 0 1 20 0M12 20h.01"/>',
+  school: '<path d="M2.5 9.5L12 5l9.5 4.5L12 14z"/><path d="M6.5 11.5v4.5c1.5 1.5 3.5 2.2 5.5 2.2s4-.7 5.5-2.2v-4.5M21.5 9.5v5"/>',
   bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   zap: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'
@@ -504,6 +505,144 @@ async function notifyRefresh() {
   } catch (e) { }
 }
 
+
+/* ================= SCHOOL (1.2.0) =================
+   Raurimu Avenue School term dates. 2026 is from the school's own website (Term Dates page), checked 11 Oct 2026.
+   2027 is the Ministry of Education's set dates (the school hasn't published 2027 yet), checked 11 Oct 2026, with
+   public holidays from govt.nz. No events: the school's event calendar and 2026 newsletters were empty when checked. */
+const SCHOOL_NAME = 'Raurimu Avenue School';
+const SRC_SCHOOL = 'raurimu.school.nz', SRC_MOE = 'education.govt.nz', SRC_GOVT = 'govt.nz';
+const SCHOOL_CHECKED = '11 Oct 2026';
+const SCHOOL_TERMS = [ // start, end; startFrom = earliest possible start when the school hasn't set it yet; endBy = latest possible end
+  { y: 2026, n: 1, start: '2026-01-29', end: '2026-04-02', src: SRC_SCHOOL },
+  { y: 2026, n: 2, start: '2026-04-20', end: '2026-07-03', src: SRC_SCHOOL },
+  { y: 2026, n: 3, start: '2026-07-20', end: '2026-09-25', src: SRC_SCHOOL },
+  { y: 2026, n: 4, start: '2026-10-12', end: '2026-12-10', src: SRC_SCHOOL },
+  { y: 2027, n: 1, startFrom: '2027-01-28', startBy: '2027-02-03', end: '2027-04-09', src: SRC_MOE },
+  { y: 2027, n: 2, start: '2027-04-27', end: '2027-07-02', src: SRC_MOE },
+  { y: 2027, n: 3, start: '2027-07-19', end: '2027-09-24', src: SRC_MOE },
+  { y: 2027, n: 4, start: '2027-10-11', endBy: '2027-12-17', src: SRC_MOE }
+];
+const SCHOOL_HOLS = [ // public holidays and other no-school days
+  ['2026-01-26', 'Northland Anniversary Day', SRC_SCHOOL], ['2026-02-06', 'Waitangi Day', SRC_SCHOOL], ['2026-04-03', 'Good Friday', SRC_SCHOOL],
+  ['2026-04-06', 'Easter Monday', SRC_SCHOOL], ['2026-04-07', 'Easter Tuesday (school holiday)', SRC_SCHOOL], ['2026-04-27', 'Anzac Day (observed)', SRC_SCHOOL],
+  ['2026-06-01', 'King’s Birthday', SRC_SCHOOL], ['2026-07-10', 'Matariki', SRC_SCHOOL], ['2026-10-26', 'Labour Day', SRC_SCHOOL],
+  ['2027-02-01', 'Northland Anniversary Day', SRC_GOVT], ['2027-02-08', 'Waitangi Day (observed)', SRC_MOE], ['2027-03-26', 'Good Friday', SRC_MOE],
+  ['2027-03-29', 'Easter Monday', SRC_MOE], ['2027-03-30', 'Easter Tuesday (school holiday)', SRC_MOE], ['2027-04-26', 'Anzac Day (observed)', SRC_MOE],
+  ['2027-06-07', 'King’s Birthday', SRC_MOE], ['2027-06-25', 'Matariki', SRC_MOE], ['2027-10-25', 'Labour Day', SRC_MOE]
+];
+const holName = iso => { const h = SCHOOL_HOLS.find(x => x[0] === iso); return h ? h[1] : ''; };
+const isWknd = iso => { const d = new Date(parseD(iso)).getUTCDay(); return d === 0 || d === 6; };
+const tStart = t => t.start || t.startFrom, tEnd = t => t.end || t.endBy;
+function termOf(iso) { return SCHOOL_TERMS.find(t => iso >= (t.start || t.startBy) && iso <= tEnd(t)) || null; } // unset first day: counts from the latest possible start
+function isSchoolDay(iso) { return !!termOf(iso) && !isWknd(iso) && !holName(iso); }
+const termLabel = t => 'Term ' + t.n + (t.y !== new Date().getFullYear() ? ' ' + t.y : '');
+function inWords(days) {
+  if (days <= 0) return 'today'; if (days === 1) return 'tomorrow';
+  if (days < 14) return 'in ' + plural(days, 'day');
+  const w = Math.round(days / 7); return 'in ' + plural(w, 'week');
+}
+// The term (or holiday gap) we're in now, and what's next
+function schoolNow(now = new Date()) {
+  const iso = todayISO(now);
+  const cur = termOf(iso);
+  if (cur) return { iso, term: cur, endsIn: daysLeft(tEnd(cur), now) };
+  const next = SCHOOL_TERMS.find(t => tStart(t) > iso);
+  return { iso, next, startsIn: next ? daysLeft(tStart(next), now) : null };
+}
+function schoolChip(now = new Date()) {
+  const n = schoolNow(now);
+  if (n.term) {
+    const t = n.term;
+    if (n.endsIn === 0) return 'Last day of Term ' + t.n + ' today';
+    return 'Term ' + t.n + ' ends ' + inWords(n.endsIn) + (t.end ? '' : ' (at the latest)');
+  }
+  if (n.next) return 'Term ' + n.next.n + ' starts ' + (n.next.start ? inWords(n.startsIn) : 'between ' + fmt(n.next.startFrom) + ' and ' + fmt(n.next.startBy));
+  return '';
+}
+// One short line for the main screen
+function schoolLine(now = new Date()) {
+  const n = schoolNow(now), iso = n.iso;
+  if (!n.term) {
+    if (!n.next) return '';
+    if (!n.next.start) return 'School holidays. Term ' + n.next.n + ' starts between ' + fmtW(n.next.startFrom) + ' and ' + fmtW(n.next.startBy) + ' (check with school).';
+    if (n.startsIn > 21) return ''; // long way off, keep the screen quiet
+    return n.startsIn === 1 ? 'Term ' + n.next.n + ' starts tomorrow, ' + fmtW(n.next.start) + '.' : 'School holidays. Term ' + n.next.n + ' starts ' + fmtW(n.next.start) + ' (' + inWords(n.startsIn) + ').';
+  }
+  if (isSchoolDay(iso) && now.getHours() < 15) return 'School today, 9am to 3pm.' + (iso === tEnd(n.term) && n.term.end ? ' Last day of Term ' + n.term.n + '.' : '');
+  // next school day after today
+  let d = addDays(iso, 1), skipped = '';
+  for (let i = 0; i < 40; i++, d = addDays(d, 1)) {
+    if (isSchoolDay(d)) break;
+    if (!termOf(d)) { const nx = SCHOOL_TERMS.find(t => tStart(t) > iso && t !== n.term); return 'School holidays from ' + (daysLeft(d) === 1 ? 'tomorrow' : fmtW(d)) + '.' + (nx ? ' Term ' + nx.n + ' starts ' + (nx.start ? fmtW(nx.start) : 'between ' + fmt(nx.startFrom) + ' and ' + fmt(nx.startBy)) + '.' : ''); }
+    if (!isWknd(d) && holName(d)) skipped = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(parseD(d)).getUTCDay()] + ' is ' + holName(d).replace(/ \(.*\)$/, '');
+  }
+  const today = holName(iso) ? 'No school today, ' + holName(iso).replace(/ \(.*\)$/, '') + '. ' : '';
+  return today + 'Next school day: ' + (daysLeft(d) === 1 ? 'tomorrow, ' + fmtW(d) : fmtW(d)) + (skipped && !today ? ' (' + skipped + ')' : '') + '.';
+}
+function schoolLineCard() {
+  let l = ''; try { l = schoolLine(); } catch (e) { l = ''; }
+  return l ? `<button class="schoolline" onclick="go('#school')">${I('school')}<span>${esc(l)}</span>${I('right')}</button>` : '';
+}
+// All rows, grouped: each term with its days, then the holidays after it
+function schoolGroups() {
+  const out = [];
+  SCHOOL_TERMS.forEach((t, i) => {
+    const rows = [];
+    const startIso = tStart(t), endIso = tEnd(t);
+    rows.push(t.start ? { d: t.start, what: 'Term ' + t.n + ' starts', kind: 'start' } : { d: t.startFrom, d2: t.startBy, what: 'Term ' + t.n + ' starts (school picks a day in this range)', kind: 'start' });
+    SCHOOL_HOLS.filter(h => h[0] >= startIso && h[0] <= endIso).forEach(h => rows.push({ d: h[0], what: h[1] + (!t.start && h[0] < t.startBy ? ' (if term has started)' : ''), kind: 'hol', src: h[2] }));
+    rows.push(t.end ? { d: t.end, what: 'Last day of Term ' + t.n, kind: 'end' } : { d: t.endBy, what: 'Term ' + t.n + ' ends (no later than this)', kind: 'end' });
+    out.push({ key: t.y + '-' + t.n, title: 'Term ' + t.n + ' ' + t.y, range: (t.start ? fmtW(t.start) : fmt(t.startFrom) + '–' + fmt(t.startBy)) + ' to ' + (t.end ? fmtW(t.end) : 'by ' + fmtW(t.endBy)), from: startIso, to: endIso, rows, src: t.src });
+    const nx = SCHOOL_TERMS[i + 1];
+    const hFrom = addDays(endIso, 1);
+    if (nx) {
+      const hTo = addDays(tStart(nx), -1);
+      const hrows = SCHOOL_HOLS.filter(h => h[0] >= hFrom && h[0] <= hTo).map(h => ({ d: h[0], what: h[1], kind: 'hol', src: h[2] }));
+      const summer = nx.y !== t.y;
+      out.push({ key: t.y + '-' + t.n + 'h', hol: true, title: summer ? 'Summer holidays' : 'Holidays after Term ' + t.n, range: fmtW(hFrom) + ' to ' + (nx.start ? fmtW(hTo) : 'late Jan / early Feb'), from: hFrom, to: hTo, rows: hrows, src: t.src });
+    } else out.push({ key: t.y + '-' + t.n + 'h', hol: true, title: 'Summer holidays', range: 'From ' + (t.end ? fmtW(hFrom) : 'mid December'), from: hFrom, to: addDays(hFrom, 40), rows: [], src: t.src });
+  });
+  return out;
+}
+function srcText(src) {
+  return src === SRC_SCHOOL ? 'From the school’s website (' + SRC_SCHOOL + '), checked ' + SCHOOL_CHECKED
+    : src === SRC_MOE ? 'Ministry term dates (' + SRC_MOE + '), checked ' + SCHOOL_CHECKED + '. Check with school for teacher-only days.'
+      : 'Public holiday dates from ' + SRC_GOVT + ', checked ' + SCHOOL_CHECKED;
+}
+function schoolRow(r) {
+  const tag = r.kind === 'hol' ? (isWknd(r.d) ? '<span class="stag wk">Weekend</span>' : '<span class="stag hol">No school</span>') : r.kind === 'start' ? '<span class="stag st">Start</span>' : '<span class="stag en">End</span>';
+  const dl = daysLeft(r.d), when = r.d2 ? fmtW(r.d) + ' – ' + fmtW(r.d2) : fmtW(r.d);
+  const soon = !r.d2 && dl >= 0 && dl <= 60 ? `<span class="muted"> · ${dl === 0 ? 'today' : dl === 1 ? 'tomorrow' : 'in ' + plural(dl, 'day')}</span>` : '';
+  const cal = r.d2 ? '' : `<button class="calbtn" aria-label="Add to phone calendar: ${esc(r.what)}" onclick="schoolIcs(${jsArg(r.d)},${jsArg(r.what)})">${I('cal')}</button>`;
+  return `<div class="srow ${r.kind}"><div class="tx"><div class="t">${esc(r.what)}</div><div class="s">${esc(when)}${soon}</div></div>${tag}${cal}</div>`;
+}
+function School() {
+  const today = todayISO(), gs = schoolGroups();
+  const up = gs.filter(g => g.to >= today), past = gs.filter(g => g.to < today);
+  const grp = g => `<div class="card sgrp${g.hol ? ' holgrp' : ''}${g.from <= today && g.to >= today ? ' now' : ''}"><div class="sgh"><div class="sgt">${esc(g.title)}${g.from <= today && g.to >= today ? ' <span class="nowtag">Now</span>' : ''}</div><div class="sgr">${esc(g.range)}</div></div>
+    ${g.rows.length ? g.rows.map(schoolRow).join('') : ''}${g.hol ? '' : `<div class="ssrc">${esc(srcText(g.src))}</div>`}</div>`;
+  const chip = schoolChip();
+  return header('School', SCHOOL_NAME + ', Onerahi') +
+    (chip ? `<div class="schip">${esc(chip)}</div>` : '') +
+    `<div class="muted shours">School day 9am to 3pm. Closed on weekends and public holidays.</div>` +
+    up.map(grp).join('') +
+    (past.length ? `<details class="spast"><summary>Earlier this year (${past.filter(g => !g.hol).length} ${past.filter(g => !g.hol).length === 1 ? 'term' : 'terms'})</summary>${past.map(grp).join('')}</details>` : '') +
+    `<div class="foot">2026 dates are from the school’s website (${SRC_SCHOOL}). 2027 dates are the Ministry of Education’s term dates; the school may add teacher-only days or set its own first and last day, so check with the school. Holiday dates from ${SRC_MOE} and ${SRC_GOVT}. All checked ${SCHOOL_CHECKED}.<br>Tap ${I('cal')} to add a date to your phone’s calendar.</div>`;
+}
+function schoolIcs(iso, what) {
+  const d = iso.replace(/-/g, ''), d2 = addDays(iso, 1).replace(/-/g, '');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sarahs To-do//School//EN', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT', 'UID:school-' + d + '-' + what.replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 30) + '@sarahs-todo',
+    'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + d, 'DTEND;VALUE=DATE:' + d2, 'SUMMARY:' + (what + ' (' + SCHOOL_NAME + ')').replace(/[,;]/g, m => '\\' + m), 'TRANSP:TRANSPARENT', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+  const a = document.createElement('a'); a.href = url; a.download = 'school-' + iso + '.ics'; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+  toast('Opening it in your calendar…');
+}
+const curPage = () => (location.hash || '').replace('#', '') === 'school' ? 'school' : 'todo';
+const pageTabs = () => `<div class="ptabs" role="tablist"><button role="tab" class="${curPage() === 'todo' ? 'on' : ''}" onclick="go('#todo')">${I('check')} To-do</button><button role="tab" class="${curPage() === 'school' ? 'on' : ''}" onclick="go('#school')">${I('school')} School</button></div>`;
+
 /* ================= START ================= */
 /* Greeting at the top, by the phone's own clock (1.0.3) */
 function greetWord(now = new Date()) { const h = now.getHours(); return h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : 'evening'; }
@@ -517,9 +656,12 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function render() {
   if (!S) return;
   let page = '';
-  try { page = Todo(); } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
-  $('#view').innerHTML = greetCard() + installCard() + notifyCard() + page;
+  try { page = curPage() === 'school' ? School() : Todo(); } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
+  $('#view').innerHTML = greetCard() + (curPage() === 'todo' ? schoolLineCard() : '') + pageTabs() + installCard() + notifyCard() + page;
 }
+window.addEventListener('hashchange', () => { if (!sheetOpen) { render(); window.scrollTo(0, 0); } });
+let schoolLineLast = '';
+setInterval(() => { try { const l = schoolLine(); if (l !== schoolLineLast) { const had = schoolLineLast; schoolLineLast = l; if (had && !sheetOpen) render(); } } catch (e) { } }, 60000);
 let renderedDay = todayISO();
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && todayISO() !== renderedDay && !sheetOpen) { renderedDay = todayISO(); render(); } });
 window.addEventListener('offline', () => { sharedErr = 'offline'; if (!sheetOpen) render(); });
