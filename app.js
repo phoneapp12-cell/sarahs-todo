@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -10,6 +10,11 @@ const uid = p => p + '-' + Date.now().toString(36) + Math.random().toString(36).
 const plural = (n, w, ws) => n + ' ' + (n === 1 ? w : (ws || w + 's'));
 const jsArg = s => esc(JSON.stringify(s));
 const P = {
+  car: '<path d="M3 13l2.2-5.3A2.5 2.5 0 0 1 7.5 6h9a2.5 2.5 0 0 1 2.3 1.7L21 13v4a1 1 0 0 1-1 1h-1.2M3 13v4a1 1 0 0 0 1 1h1.2M3 13h18M9.8 18h4.4"/><circle cx="7.5" cy="17.5" r="2"/><circle cx="16.5" cy="17.5" r="2"/>',
+  pin: '<path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  tooth: '<path d="M7.5 3.5c-2.5 0-4 2-4 4.5 0 2 .8 3.3 1.3 5 .6 2.2.8 7.5 2.7 7.5 1.7 0 1.6-4.5 2.5-5.8.5-.8 1.5-.8 2 0 .9 1.3.8 5.8 2.5 5.8 1.9 0 2.1-5.3 2.7-7.5.5-1.7 1.3-3 1.3-5 0-2.5-1.5-4.5-4-4.5-1.9 0-2.7 1-4.5 1s-2.6-1-4.5-1z"/>',
+  stetho: '<path d="M5 3H4v5a4 4 0 0 0 8 0V3h-1M8 12v2a5 5 0 0 0 10 0v-2"/><circle cx="18" cy="10" r="2"/>',
   bill: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   cash: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
@@ -62,7 +67,13 @@ function normalise(d) {
   }
   d.lists = [...DEFAULT_LISTS, ...d.lists.filter(l => !isFixedList(l))]; // put back Home or Shopping if missing
   d.todos.forEach(t => { if (!t.list) t.list = 'Home'; if (!d.lists.includes(t.list)) d.lists.push(t.list); });
-  d.settings = { shared: st.shared && typeof st.shared === 'object' ? st.shared : {}, errandsGone: true };
+  d.settings = { shared: st.shared && typeof st.shared === 'object' ? st.shared : {}, errandsGone: true, seenRem: Array.isArray(st.seenRem) ? st.seenRem.slice(-200) : [] };
+  // 1.4.0: appointments (doctor, dentist, other) and the car dates Shane's app sends
+  d.appts = (Array.isArray(d.appts) ? d.appts : []).filter(a => a && typeof a === 'object' && a.id && a.title && /^\d{4}-\d{2}-\d{2}$/.test(a.date || '')).map(a => ({
+    id: String(a.id), type: APPT_TYPES[a.type] ? a.type : 'other', title: String(a.title).slice(0, 80), date: a.date, time: /^\d{2}:\d{2}$/.test(a.time || '') ? a.time : '',
+    place: String(a.place || '').slice(0, 160), notes: String(a.notes || '').slice(0, 1000), remind: APPT_REMIND.some(x => x[0] === String(a.remind == null ? '' : a.remind)) ? String(a.remind == null ? '' : a.remind) : '',
+    private: !!a.private, created: Number(a.created) || Date.now() }));
+  d.car = d.car && typeof d.car === 'object' && d.car.plate ? d.car : null;
   d.version = 1;
   return d;
 }
@@ -358,12 +369,12 @@ function deleteList(name) {
 const listIn = l => l === 'Errands' && !S.lists.includes('Errands') ? (S.lists.includes('Home') ? 'Home' : S.lists[0]) : l;
 const SH = {
   state: () => S.settings.shared,
-  items: () => S.todos.filter(t => !t.private), // 1.1.2: private ones never leave this phone
+  items: () => [...S.todos.filter(t => !t.private), ...S.appts.filter(a => !a.private).map(apptView)], // 1.1.2: private ones never leave this phone
   by: t => t && t.by === 'shane' ? 'shane' : 'sarah',
   want: () => true,
-  add: s => { if (S.todos.some(t => t.id === s.id)) return; /* a private one: stays private (the next sync takes it off the shared list) */ s = Object.assign({}, s, { list: listIn(s.list) }); S.todos.push(Object.assign({ id: s.id, title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done, doneAt: s.doneAt || undefined, created: s.created }, s.by === 'shane' ? { by: 'shane' } : {}, s.brand ? { brand: s.brand } : {})); if (!S.lists.includes(s.list)) S.lists.push(s.list); },
-  update: (t, s) => { s = Object.assign({}, s, { list: listIn(s.list) }); Object.assign(t, { title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done }); if (s.brand) t.brand = s.brand; else delete t.brand; if (s.done) t.doneAt = s.doneAt || Date.now(); else delete t.doneAt; if (!S.lists.includes(s.list)) S.lists.push(s.list); },
-  remove: id => { S.todos = S.todos.filter(t => t.id !== id); },
+  add: s => { if (s.list === 'Appointments') { if (!S.appts.some(a => a.id === s.id) && !s.done) S.appts.push(apptFromShared(s)); return; } if (S.todos.some(t => t.id === s.id)) return; /* a private one: stays private (the next sync takes it off the shared list) */ s = Object.assign({}, s, { list: listIn(s.list) }); S.todos.push(Object.assign({ id: s.id, title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done, doneAt: s.doneAt || undefined, created: s.created }, s.by === 'shane' ? { by: 'shane' } : {}, s.brand ? { brand: s.brand } : {})); if (!S.lists.includes(s.list)) S.lists.push(s.list); },
+  update: (t, s) => { if (t._appt) { const a = apptFromShared(s); ['type', 'title', 'date', 'time', 'place', 'notes'].forEach(k => { t._appt[k] = a[k]; }); return; } s = Object.assign({}, s, { list: listIn(s.list) }); Object.assign(t, { title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done }); if (s.brand) t.brand = s.brand; else delete t.brand; if (s.done) t.doneAt = s.doneAt || Date.now(); else delete t.doneAt; if (!S.lists.includes(s.list)) S.lists.push(s.list); },
+  remove: id => { S.todos = S.todos.filter(t => t.id !== id); S.appts = S.appts.filter(a => !(a.id === id && !a.private)); },
   persist: async changed => {
     sharedApplying = true;
     try { await save(); } finally { sharedApplying = false; }
@@ -378,7 +389,8 @@ const SH = {
 const SHARED_URL = 'https://due-dates-calendar-relay.phoneapp12.workers.dev/shared-todo';
 const SHARED_KEY = 'sArgfZGJrHxJN9I319FJeFLhFshrHsRU2xDFnnLL'; // only opens this one shared list
 const SHARED_FIELDS = ['title', 'list', 'due', 'notes', 'priority', 'done'];
-const sharedHash = t => JSON.stringify(SHARED_FIELDS.map(k => k === 'done' ? !!t[k] : String(t[k] == null ? '' : t[k])).concat(t.brand ? [brandKey(t.brand)] : []));
+const sharedHash = t => JSON.stringify(SHARED_FIELDS.map(k => k === 'done' ? !!t[k] : String(t[k] == null ? '' : t[k])).concat(t.brand ? [brandKey(t.brand)] : []).concat(t.appt ? [apptKey(t.appt)] : []));
+const apptKey = a => JSON.stringify([a.type || '', a.time || '', a.place || '']);
 let sharedBusy = false, sharedTimer = null, sharedLastOk = 0, sharedErr = '';
 function sharedState() { const s = SH.state(); if (!s.snap || typeof s.snap !== 'object') s.snap = {}; if (!s.pend || typeof s.pend !== 'object') s.pend = {}; return s; }
 // Spot local changes since the last agreed version and queue them (called on every save)
@@ -390,7 +402,7 @@ function sharedNote() {
     if (st.snap[t.id] === h) { delete st.pend[t.id]; return; }
     const p = st.pend[t.id];
     if (p && !p.deleted && sharedHash(p) === h) return; // already queued
-    st.pend[t.id] = Object.assign({ id: t.id, created: t.created || now, by: SH.by(t), doneAt: t.done ? t.doneAt || now : 0, updated: now }, Object.fromEntries(SHARED_FIELDS.map(k => [k, k === 'done' ? !!t[k] : (t[k] || '')])), t.brand ? { brand: t.brand } : {});
+    st.pend[t.id] = Object.assign({ id: t.id, created: t.created || now, by: SH.by(t), doneAt: t.done ? t.doneAt || now : 0, updated: now }, Object.fromEntries(SHARED_FIELDS.map(k => [k, k === 'done' ? !!t[k] : (t[k] || '')])), t.brand ? { brand: t.brand } : {}, t.appt ? { appt: t.appt } : {});
   });
   Object.keys(st.snap).forEach(id => { if (!seen.has(id) && !(st.pend[id] && st.pend[id].deleted)) st.pend[id] = { id, deleted: true, updated: now }; });
 }
@@ -720,9 +732,135 @@ function schoolIcs(iso, what) {
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
   toast('Opening it in your calendar…');
 }
-const curPage = () => (location.hash || '').replace('#', '') === 'school' ? 'school' : 'todo';
-const pageTabs = () => `<div class="ptabs" role="tablist"><button role="tab" class="${curPage() === 'todo' ? 'on' : ''}" onclick="go('#todo')">${I('check')} To-do</button><button role="tab" class="${curPage() === 'school' ? 'on' : ''}" onclick="go('#school')">${I('school')} School</button></div>`;
+const curPage = () => { const h = (location.hash || '').replace('#', ''); return h === 'school' || h === 'appts' ? h : 'todo'; };
+const pageTabs = () => `<div class="ptabs" role="tablist"><button role="tab" class="${curPage() === 'todo' ? 'on' : ''}" onclick="go('#todo')">${I('check')} To-do</button><button role="tab" class="${curPage() === 'appts' ? 'on' : ''}" onclick="go('#appts')">Car &amp; appts</button><button role="tab" class="${curPage() === 'school' ? 'on' : ''}" onclick="go('#school')">${I('school')} School</button></div>`;
 
+
+/* ================= CAR & APPOINTMENTS (1.4.0) =================
+   My car: the Haval's WOF, rego and service dates, sent by Shane's app (only this car). Read-only here.
+   Appointments: doctor, dentist and other. Shared with Shane by default (his calendar shows them with a pink S);
+   untick "Share with Shane" to keep one just on this phone. Reminders show in the app, and the .ics file has an alarm
+   so the phone's own calendar can remind too. */
+const APPT_TYPES = { doctor: ['Doctor', 'stetho'], dentist: ['Dentist', 'tooth'], other: ['Other', 'cal'] };
+const APPT_REMIND = [['', 'No reminder'], ['0', 'At the time'], ['30', '30 minutes before'], ['60', '1 hour before'], ['120', '2 hours before'], ['1440', '1 day before']];
+const CAR_URL = 'https://due-dates-calendar-relay.phoneapp12.workers.dev/shared-car';
+const apptView = a => ({ id: a.id, title: a.title, list: 'Appointments', due: a.date, notes: a.notes || '', priority: 'normal', done: false, created: a.created, by: 'sarah', appt: { type: a.type, time: a.time || '', place: a.place || '' }, _appt: a });
+function apptFromShared(s) { const x = s.appt || {}; return { id: s.id, type: APPT_TYPES[x.type] ? x.type : 'other', title: String(s.title || '').slice(0, 80), date: s.due || todayISO(), time: x.time || '', place: x.place || '', notes: s.notes || '', remind: '', private: false, created: s.created || Date.now() }; }
+let carBusy = false, carErr = false;
+async function carRefresh() {
+  if (carBusy || navigator.onLine === false) return;
+  carBusy = true;
+  try {
+    const r = await fetch(CAR_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SHARED_KEY }) });
+    if (!r.ok) throw new Error('http ' + r.status);
+    const d = await r.json(); carErr = false;
+    const had = JSON.stringify(S.car || null), now = d && d.car && d.car.plate ? d.car : null;
+    if (now && JSON.stringify(now) !== had) { S.car = now; sharedApplying = true; try { await save(); } finally { sharedApplying = false; } if (!sheetOpen && curPage() !== 'school') render(); }
+  } catch (e) { carErr = true; } finally { carBusy = false; }
+}
+const chipFor = d => d < 0 ? `<span class="cchip over">${-d} day${d === -1 ? '' : 's'} overdue</span>` : d === 0 ? '<span class="cchip soon">Today</span>' : d < 14 ? `<span class="cchip soon">${d === 1 ? 'Tomorrow' : d + ' days'}</span>` : `<span class="cchip ok">${d < 60 ? d + ' days' : Math.round(d / 30.4) + ' months'}</span>`;
+const CAR_PARTS = [['wof', 'Warrant of fitness (WOF)', 'WOF'], ['rego', 'Registration', 'Rego'], ['svc', 'Service', 'Service']];
+function carCard() {
+  const c = S.car;
+  const name = 'My car — Haval H6' + (c && c.plate ? ' (' + c.plate + ')' : ' (PNU312)');
+  if (!c) return `<div class="card carcard" id="carcard"><div class="cch">${I('car')}<b>${esc(name)}</b></div><p class="muted" style="margin:6px 0 0">Waiting for dates from Shane’s app. They’ll show here once his app has been opened with your car’s dates in it.</p></div>`;
+  const rows = CAR_PARTS.map(([k, long, short]) => { const v = c[k]; if (!v) return `<div class="crow"><div class="tx"><div class="t">${long}</div><div class="s">Not set yet</div></div></div>`;
+    const d = daysLeft(v); return `<div class="crow ${d < 0 ? 'over' : d < 14 ? 'soon' : ''}"><div class="tx"><div class="t">${long}</div><div class="s">Due ${esc(fmtLong(v))}${k === 'svc' && c.svcKm ? ' or at ' + Number(c.svcKm).toLocaleString('en-NZ') + ' km' : ''}</div></div>${chipFor(d)}<button type="button" class="iconbtn sm" aria-label="Add ${short} to my phone’s calendar" onclick="carIcs('${k}')">${I('cal')}</button></div>`; }).join('');
+  return `<div class="card carcard" id="carcard"><div class="cch">${I('car')}<b>${esc(name)}</b></div>${rows}
+    <p class="muted" style="margin:8px 0 0;font-size:0.8125rem">Shane keeps these up to date in his app.${c.odo ? ' Odometer about ' + Number(c.odo).toLocaleString('en-NZ') + ' km.' : ''}</p></div>`;
+}
+function carSoonLine() {
+  const c = S.car; if (!c) return '';
+  const due = CAR_PARTS.map(([k, , short]) => c[k] ? { short, d: daysLeft(c[k]) } : null).filter(x => x && x.d < 14).sort((a, b) => a.d - b.d)[0];
+  if (!due) return '';
+  const w = due.d < 0 ? 'is overdue' : due.d === 0 ? 'is due today' : due.d === 1 ? 'is due tomorrow' : 'is due in ' + due.d + ' days';
+  return `<button class="schoolline carline${due.d < 0 ? ' over' : ''}" onclick="go('#appts')">${I('car')}<span>Car ${due.short} ${w}.</span>${I('right')}</button>`;
+}
+function apptSoonLine() {
+  const t = todayISO(), a = S.appts.filter(x => x.date >= t && daysLeft(x.date) <= 1).sort(apptCmp)[0];
+  if (!a) return '';
+  return `<button class="schoolline" onclick="go('#appts')">${I(APPT_TYPES[a.type][1])}<span>${esc(a.title)} ${daysLeft(a.date) === 0 ? 'today' : 'tomorrow'}${a.time ? ' at ' + esc(fmtTm(a.time)) : ''}.</span>${I('right')}</button>`;
+}
+const fmtTm = hm => { const h = +hm.slice(0, 2), m = hm.slice(3); return (h % 12 || 12) + (m === '00' ? '' : ':' + m) + (h < 12 ? 'am' : 'pm'); };
+const apptCmp = (a, b) => a.date.localeCompare(b.date) || (a.time || '99').localeCompare(b.time || '99');
+function icsFold(line) { const out = []; let s = line; while (s.length > 74) { out.push(s.slice(0, 74)); s = ' ' + s.slice(74); } out.push(s); return out.join('\r\n'); }
+const icsEsc = s => String(s || '').replace(/[\\,;]/g, m => '\\' + m).replace(/\n/g, '\\n');
+function icsSave(name, lines) {
+  const blob = new Blob([lines.map(icsFold).join('\r\n') + '\r\n'], { type: 'text/calendar;charset=utf-8' });
+  const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') + '.ics';
+  document.body.appendChild(el); el.click(); setTimeout(() => { URL.revokeObjectURL(el.href); el.remove(); }, 1500);
+  toast('Calendar file saved. Open it to add it to your phone’s calendar.');
+}
+const icsStamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+function carIcs(k) {
+  const c = S.car; if (!c || !c[k]) return; const p = CAR_PARTS.find(x => x[0] === k), d = c[k].replace(/-/g, '');
+  icsSave('car-' + p[2] + '-' + c[k], ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sarahs To-do//Car//EN', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT', 'UID:car-' + k + '-' + d + '@sarahs-todo', 'DTSTAMP:' + icsStamp(),
+    'DTSTART;VALUE=DATE:' + d, 'DTEND;VALUE=DATE:' + addDays(c[k], 1).replace(/-/g, ''), 'SUMMARY:' + icsEsc('Haval ' + p[2] + ' due (' + (c.plate || 'PNU312') + ')'), 'TRANSP:TRANSPARENT',
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc('Haval ' + p[2] + ' due'), 'TRIGGER:-P7D', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR']);
+}
+function apptIcs(id) {
+  const a = S.appts.find(x => x.id === id); if (!a) return; const d = a.date.replace(/-/g, '');
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sarahs To-do//Appointments//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT', 'UID:' + a.id + '@sarahs-todo', 'DTSTAMP:' + icsStamp()];
+  if (a.time) { L.push('DTSTART:' + d + 'T' + a.time.replace(':', '') + '00', 'DURATION:PT1H'); } else L.push('DTSTART;VALUE=DATE:' + d, 'DTEND;VALUE=DATE:' + addDays(a.date, 1).replace(/-/g, ''));
+  L.push('SUMMARY:' + icsEsc(a.title)); if (a.place) L.push('LOCATION:' + icsEsc(a.place)); if (a.notes) L.push('DESCRIPTION:' + icsEsc(a.notes));
+  if (a.remind !== '') L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc(a.title), 'TRIGGER:-PT' + (+a.remind) + 'M', 'END:VALARM');
+  L.push('END:VEVENT', 'END:VCALENDAR'); icsSave(a.title || 'appointment', L);
+}
+const apptStart = a => { const [y, m, d] = a.date.split('-').map(Number); const [h, mi] = (a.time || '09:00').split(':').map(Number); return new Date(y, m - 1, d, h, mi); };
+function dueReminders(now = new Date()) {
+  return S.appts.filter(a => a.remind !== '' && !S.settings.seenRem.includes(a.id + '|' + a.date)).filter(a => {
+    const st = apptStart(a), from = new Date(st.getTime() - (+a.remind) * 60000), end = a.time ? new Date(st.getTime() + 3600e3) : new Date(st.getFullYear(), st.getMonth(), st.getDate(), 23, 59);
+    return now >= from && now <= end;
+  });
+}
+function remindBanner() {
+  return dueReminders().map(a => `<div class="callout remind" data-k="${esc(a.id)}">${I('bell')}<div style="flex:1"><b>Reminder: ${esc(a.title)}</b><br>${daysLeft(a.date) === 0 ? 'Today' : fmtW(a.date)}${a.time ? ' · ' + esc(fmtTm(a.time)) : ''}${a.place ? ' · ' + esc(a.place) : ''}</div><button class="btn small" onclick="dismissRem('${a.id}|${a.date}')">OK</button></div>`).join('');
+}
+async function dismissRem(k) { S.settings.seenRem = S.settings.seenRem.concat(k).slice(-200); await save(); render(); }
+setInterval(() => { try { const k = dueReminders().map(a => a.id).join(); if (k !== (window.__remK || '')) { window.__remK = k; if (!sheetOpen) render(); } } catch (e) { } }, 30000);
+function apptRow(a) {
+  const d = daysLeft(a.date), [tn, ic] = APPT_TYPES[a.type];
+  return `<button class="row apptrow" data-id="${esc(a.id)}" onclick="apptForm('${a.id}')"><div class="aic ${a.type}">${I(ic)}</div><div class="tx"><div class="t">${esc(a.title)}</div>
+    <div class="s">${esc(fmtW(a.date))}${a.time ? ' · ' + esc(fmtTm(a.time)) : ''}${a.place ? ' · ' + esc(a.place) : ''}${a.private ? ' · just me' : ''}${a.remind !== '' ? ' · ' + I('bell', 'style="width:12px;height:12px;vertical-align:-1px"') : ''}</div></div>${d >= 0 ? chipFor(d).replace('cchip ok', 'cchip ok') : ''}</button>`;
+}
+function Appts() {
+  const t = todayISO(), up = S.appts.filter(a => a.date >= t).sort(apptCmp), past = S.appts.filter(a => a.date < t).sort((a, b) => -apptCmp(a, b));
+  return header('Car & appointments', up.length ? up.length + (up.length === 1 ? ' appointment' : ' appointments') + ' coming up' : 'No appointments booked', addBtn('Add an appointment', 'apptForm()')) + carCard() +
+    `<div class="sec">Appointments</div>` +
+    `<div class="btns apptadd">${Object.keys(APPT_TYPES).map(k => `<button class="btn small" onclick="apptForm(null,'${k}')">${I(APPT_TYPES[k][1])} ${k === 'other' ? 'Other' : APPT_TYPES[k][0]}</button>`).join('')}</div>` +
+    (up.length ? `<div class="list" id="apptlist">${up.map(apptRow).join('')}</div>` : `<div class="card empty"><div class="t">No appointments yet</div><div class="s">Add a doctor, dentist or other appointment. It goes in Shane’s calendar too, unless you untick “Share with Shane”.</div></div>`) +
+    (past.length ? `<details class="spast"><summary>Past appointments (${past.length})</summary><div class="list">${past.map(apptRow).join('')}</div></details>` : '') +
+    `<div class="foot">Appointments you share show in Shane’s calendar with your pink S. Private ones stay on this phone.</div>`;
+}
+function apptForm(id, type) {
+  const a = id ? S.appts.find(x => x.id === id) : { type: type || 'doctor', title: '', date: todayISO(), time: '', place: '', notes: '', remind: '60', private: false };
+  if (!a) return;
+  const maps = a.place ? `<a class="btn small" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.place)}" target="_blank" rel="noopener">${I('pin')} Maps</a>` : '';
+  openSheet(id ? 'Appointment' : 'Add an appointment',
+    `<div class="field"><span>Type</span>${segHtml('type', Object.keys(APPT_TYPES).map(k => [k, APPT_TYPES[k][0]]), a.type)}</div>` +
+    field('What for', inp('title', a.title, `placeholder="${a.type === 'dentist' ? 'e.g. Dentist check-up' : a.type === 'doctor' ? 'e.g. Doctor' : 'e.g. Physio'}" maxlength="80"`), 'Leave blank to just say Doctor or Dentist') +
+    `<div class="two">${field('Date', inp('date', a.date, 'type="date" required'))}${field('Time', inp('time', a.time, 'type="time"'), 'Optional')}</div>` +
+    field('Place', inp('place', a.place, 'placeholder="e.g. Onerahi Medical Centre" maxlength="160"')) +
+    field('Notes', area('notes', a.notes, 'Optional')) +
+    field('Reminder', sel('remind', APPT_REMIND, a.remind)) +
+    `<label class="sharebox"><input type="checkbox" name="share" ${a.private ? '' : 'checked'}><span><b>Share with Shane</b><small>It shows in his calendar with your pink S. Untick to keep it just on your phone.</small></span></label>` +
+    (id ? `<div class="btns" style="margin-top:4px"><button type="button" class="btn small" onclick="apptIcs('${id}')">${I('cal')} Add to phone calendar</button>${maps}</div>` : ''),
+    async v => {
+      if (!parseD(v.date)) return 'Please choose the date.';
+      const tp = APPT_TYPES[v.type] ? v.type : 'other';
+      const title = (v.title || (tp === 'other' ? '' : APPT_TYPES[tp][0])).slice(0, 80);
+      if (!title) return 'Please say what the appointment is for.';
+      const s0 = snap(), upd = { type: tp, title, date: v.date, time: v.time || '', place: v.place || '', notes: v.notes || '', remind: v.remind || '', private: v.share !== 'on' };
+      let nid = id;
+      if (id) Object.assign(a, upd); else { nid = uid('ap'); S.appts.push(Object.assign({ id: nid, created: Date.now() }, upd)); }
+      await save(); render();
+      const msg = (id ? 'Saved' : 'Added') + (upd.private ? ', just on your phone.' : '. It’s in Shane’s calendar too.');
+      if (!id && upd.remind !== '') toast(msg + ' Add it to your phone’s calendar for an alarm?', 'Add', () => apptIcs(nid)); else toast(msg, 'Undo', undoTo(s0));
+    }, id ? 'Save' : 'Add',
+    id ? `<button type="button" class="btn danger" style="flex:0 0 auto" aria-label="Delete appointment" onclick="apptDelete('${id}')">${I('trash')}</button>` : '');
+  wireSeg('type');
+}
+async function apptDelete(id) { const s0 = snap(); S.appts = S.appts.filter(a => a.id !== id); await save(); await closeSheet(); render(); toast('Appointment deleted.', 'Undo', undoTo(s0)); }
 /* ================= START ================= */
 /* Greeting at the top, by the phone's own clock (1.0.3) */
 function greetWord(now = new Date()) { const h = now.getHours(); return h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : 'evening'; }
@@ -736,8 +874,8 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function render() {
   if (!S) return;
   let page = '';
-  try { page = curPage() === 'school' ? School() : Todo(); } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
-  $('#view').innerHTML = greetCard() + (curPage() === 'todo' ? schoolLineCard() : '') + pageTabs() + installCard() + notifyCard() + page;
+  try { page = curPage() === 'school' ? School() : curPage() === 'appts' ? Appts() : Todo(); } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
+  $('#view').innerHTML = greetCard() + remindBanner() + (curPage() === 'todo' ? schoolLineCard() + apptSoonLine() + carSoonLine() : '') + pageTabs() + installCard() + notifyCard() + page;
 }
 window.addEventListener('hashchange', () => { if (!sheetOpen) { render(); window.scrollTo(0, 0); } });
 let schoolLineLast = '';
@@ -749,6 +887,8 @@ applyTheme(curTheme());
 load();
 render();
 sharedStart();
+carRefresh();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') carRefresh(); });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => notifyRefresh()).catch(() => { });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') notifyRefresh(); });
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { }
