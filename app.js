@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -77,7 +77,7 @@ function normalise(d) {
   d.appts = (Array.isArray(d.appts) ? d.appts : []).filter(a => a && typeof a === 'object' && a.id && a.title && /^\d{4}-\d{2}-\d{2}$/.test(a.date || '')).map(a => ({
     id: String(a.id), type: APPT_TYPES[a.type] ? a.type : 'other', title: String(a.title).slice(0, 80), date: a.date, time: /^\d{2}:\d{2}$/.test(a.time || '') ? a.time : '',
     place: String(a.place || '').slice(0, 160), notes: String(a.notes || '').slice(0, 1000), remind: APPT_REMIND.some(x => x[0] === String(a.remind == null ? '' : a.remind)) ? String(a.remind == null ? '' : a.remind) : '',
-    private: !!a.private, created: Number(a.created) || Date.now(), claim: claimNorm(a.claim) }));
+    private: a.by === 'shane' ? false : !!a.private, created: Number(a.created) || Date.now(), claim: claimNorm(a.claim), ...(a.by === 'shane' ? { by: 'shane' } : {}) }));
   d.car = d.car && typeof d.car === 'object' && d.car.plate ? d.car : null;
   d.version = 1;
   return d;
@@ -757,8 +757,8 @@ const pageTabs = () => `<div class="ptabs" role="tablist"><button role="tab" cla
 const APPT_TYPES = { doctor: ['Doctor', 'stetho'], dentist: ['Dentist', 'tooth'], other: ['Other', 'cal'] };
 const APPT_REMIND = [['', 'No reminder'], ['0', 'At the time'], ['30', '30 minutes before'], ['60', '1 hour before'], ['120', '2 hours before'], ['1440', '1 day before']];
 const CAR_URL = 'https://due-dates-calendar-relay.phoneapp12.workers.dev/shared-car';
-const apptView = a => Object.assign({ id: a.id, title: a.title, list: 'Appointments', due: a.date, notes: a.notes || '', priority: 'normal', done: false, created: a.created, by: 'sarah', appt: { type: a.type, time: a.time || '', place: a.place || '' }, _appt: a }, a.claim ? { claim: a.claim } : {});
-function apptFromShared(s) { const x = s.appt || {}; return { id: s.id, type: APPT_TYPES[x.type] ? x.type : 'other', title: String(s.title || '').slice(0, 80), date: s.due || todayISO(), time: x.time || '', place: x.place || '', notes: s.notes || '', remind: '', private: false, created: s.created || Date.now(), claim: claimNorm(s.claim) }; }
+const apptView = a => Object.assign({ id: a.id, title: a.title, list: 'Appointments', due: a.date, notes: a.notes || '', priority: 'normal', done: false, created: a.created, by: a.by === 'shane' ? 'shane' : 'sarah', appt: { type: a.type, time: a.time || '', place: a.place || '' }, _appt: a }, a.claim ? { claim: a.claim } : {});
+function apptFromShared(s) { const x = s.appt || {}; return { id: s.id, type: APPT_TYPES[x.type] ? x.type : 'other', title: String(s.title || '').slice(0, 80), date: s.due || todayISO(), time: x.time || '', place: x.place || '', notes: s.notes || '', remind: s.by === 'shane' ? '60' : '', private: false, created: s.created || Date.now(), claim: claimNorm(s.claim), ...(s.by === 'shane' ? { by: 'shane' } : {}) }; }
 let carBusy = false, carErr = false;
 async function carRefresh() {
   if (carBusy || navigator.onLine === false) return;
@@ -833,7 +833,7 @@ async function dismissRem(k) { S.settings.seenRem = S.settings.seenRem.concat(k)
 setInterval(() => { try { const k = dueReminders().map(a => a.id).join(); if (k !== (window.__remK || '')) { window.__remK = k; if (!sheetOpen) render(); } } catch (e) { } }, 30000);
 function apptRow(a) {
   const d = daysLeft(a.date), [tn, ic] = APPT_TYPES[a.type];
-  return `<button class="row apptrow" data-id="${esc(a.id)}" onclick="apptForm('${a.id}')"><div class="aic ${a.type}">${I(ic)}</div><div class="tx"><div class="t">${esc(a.title)}</div>
+  return `<button class="row apptrow" data-id="${esc(a.id)}" onclick="apptForm('${a.id}')"><div class="aic ${a.type}">${I(ic)}</div><div class="tx"><div class="t">${shaneBadge(a)}${esc(a.title)}</div>
     <div class="s">${esc(fmtW(a.date))}${a.time ? ' · ' + esc(fmtTm(a.time)) : ''}${a.place ? ' · ' + esc(a.place) : ''}${a.private ? ' · just me' : ''}${a.claim && a.claim.status !== 'none' ? ' · claim ' + CLAIM_ST[a.claim.status].toLowerCase() : ''}${a.remind !== '' ? ' · ' + I('bell', 'style="width:12px;height:12px;vertical-align:-1px"') : ''}</div></div>${d >= 0 ? chipFor(d).replace('cchip ok', 'cchip ok') : ''}</button>`;
 }
 function Appts() {
@@ -856,14 +856,14 @@ function apptForm(id, type) {
     field('Place', inp('place', a.place, 'placeholder="e.g. Onerahi Medical Centre" maxlength="160"')) +
     field('Notes', area('notes', a.notes, 'Optional')) +
     field('Reminder', sel('remind', APPT_REMIND, a.remind)) +
-    `<label class="sharebox"><input type="checkbox" name="share" ${a.private ? '' : 'checked'}><span><b>Share with Shane</b><small>It shows in his calendar with your pink S. Untick to keep it just on your phone.</small></span></label>` +
+    (a.by === 'shane' ? `<p class="muted" id="shanenote" style="margin:4px 2px 10px">${shaneBadge(a)} Shane added this in his app. Changes go back to him.</p>` : `<label class="sharebox"><input type="checkbox" name="share" ${a.private ? '' : 'checked'}><span><b>Share with Shane</b><small>It shows in his calendar with your pink S. Untick to keep it just on your phone.</small></span></label>`) +
     (id ? `<div class="btns" style="margin-top:4px"><button type="button" class="btn small" onclick="apptIcs('${id}')">${I('cal')} Add to phone calendar</button>${maps}<button type="button" class="btn small" onclick="claimSheet('a:${id}')">${I('receipt')} UniMed claim${a.claim && a.claim.status !== 'none' ? ' · ' + CLAIM_ST[a.claim.status] : ''}</button></div>` : ''),
     async v => {
       if (!parseD(v.date)) return 'Please choose the date.';
       const tp = APPT_TYPES[v.type] ? v.type : 'other';
       const title = (v.title || (tp === 'other' ? '' : APPT_TYPES[tp][0])).slice(0, 80);
       if (!title) return 'Please say what the appointment is for.';
-      const s0 = snap(), upd = { type: tp, title, date: v.date, time: v.time || '', place: v.place || '', notes: v.notes || '', remind: v.remind || '', private: v.share !== 'on' };
+      const s0 = snap(), upd = { type: tp, title, date: v.date, time: v.time || '', place: v.place || '', notes: v.notes || '', remind: v.remind || '', private: a.by === 'shane' ? false : v.share !== 'on' };
       let nid = id;
       if (id) Object.assign(a, upd); else { nid = uid('ap'); S.appts.push(Object.assign({ id: nid, created: Date.now() }, upd)); }
       await save(); render();
