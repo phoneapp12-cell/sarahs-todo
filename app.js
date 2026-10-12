@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -10,6 +10,9 @@ const uid = p => p + '-' + Date.now().toString(36) + Math.random().toString(36).
 const plural = (n, w, ws) => n + ' ' + (n === 1 ? w : (ws || w + 's'));
 const jsArg = s => esc(JSON.stringify(s));
 const P = {
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 7 9-7"/>',
+  doc: '<rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
   image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/>',
@@ -839,7 +842,7 @@ function apptRow(a) {
 function Appts() {
   const t = todayISO(), up = S.appts.filter(a => a.date >= t).sort(apptCmp), past = S.appts.filter(a => a.date < t).sort((a, b) => -apptCmp(a, b));
   return header('Car & appointments', up.length ? up.length + (up.length === 1 ? ' appointment' : ' appointments') + ' coming up' : 'No appointments booked', addBtn('Add an appointment', 'apptForm()')) + carCard() +
-    claimsCard() + `<div class="sec">Appointments</div>` +
+    mxCard() + claimsCard() + `<div class="sec">Appointments</div>` +
     `<div class="btns apptadd">${Object.keys(APPT_TYPES).map(k => `<button class="btn small" onclick="apptForm(null,'${k}')">${I(APPT_TYPES[k][1])} ${k === 'other' ? 'Other' : APPT_TYPES[k][0]}</button>`).join('')}</div>` +
     (up.length ? `<div class="list" id="apptlist">${up.map(apptRow).join('')}</div>` : `<div class="card empty"><div class="t">No appointments yet</div><div class="s">Add a doctor, dentist or other appointment. It goes in Shane’s calendar too, unless you untick “Share with Shane”.</div></div>`) +
     (past.length ? `<details class="spast"><summary>Past appointments (${past.length})</summary><div class="list">${past.map(apptRow).join('')}</div></details>` : '') +
@@ -891,7 +894,7 @@ function claimNorm(c) {
   if (!c || typeof c !== 'object') return null;
   const s = (v, n) => String(v == null ? '' : v).slice(0, n).trim();
   return { status: CLAIM_ST[c.status] ? c.status : 'none', patient: s(c.patient, 60), provider: s(c.provider, 120), reason: s(c.reason, 160), date: clIso(c.date),
-    amount: claimAmtStr(c.amount), notes: s(c.notes, 1000), photos: (Array.isArray(c.photos) ? c.photos : []).filter(p => p && /^[\w-]{6,40}$/.test(String(p.id || ''))).slice(0, 6).map(p => ({ id: String(p.id), up: !!p.up })),
+    amount: claimAmtStr(c.amount), notes: s(c.notes, 1000), photos: (Array.isArray(c.photos) ? c.photos : []).filter(p => p && /^[\w-]{6,40}$/.test(String(p.id || ''))).slice(0, 6).map(p => Object.assign({ id: String(p.id), up: !!p.up }, p.pdf ? { pdf: true, name: String(p.name || 'invoice.pdf').slice(0, 160) } : {})),
     submittedAt: clIso(c.submittedAt), paidAt: clIso(c.paidAt), paidAmt: claimAmtStr(c.paidAmt), updated: Number(c.updated) || 0 };
 }
 const claimKey = c => c ? JSON.stringify([c.status, c.patient, c.provider, c.reason, c.date, c.amount, c.notes, (c.photos || []).map(p => p.id + (p.up ? '+' : '')).join(), c.submittedAt, c.paidAt, c.paidAmt]) : '';
@@ -934,14 +937,14 @@ async function clPhLoad(p) { let d = await clPhGet(p.id); if (!d && p.up) d = aw
 // Sends any photos not yet on the relay (shared claims only). Returns true if any changed.
 async function claimUploadPhotos(c) {
   let changed = false;
-  for (const p of (c && c.photos) || []) { if (!p.up && await clPhUpload(p.id)) { p.up = true; changed = true; } }
+  for (const p of (c && c.photos) || []) { if (!p.up && !p.pdf && await clPhUpload(p.id)) { p.up = true; changed = true; } }
   if (changed) c.updated = Date.now();
   return changed;
 }
 let clEdit = null;
 function claimPhotosHtml() {
   const ph = (clEdit && clEdit.photos) || [];
-  return ph.map((p, i) => `<div class="clthumb" data-i="${i}"><button type="button" class="climg" onclick="clPhotoView(${i})" aria-label="Show invoice photo ${i + 1}"><img alt="" data-ph="${esc(p.id)}"></button><button type="button" class="clx" aria-label="Remove photo" onclick="claimPhotoDrop(${i})">×</button></div>`).join('') ||
+  return ph.map((p, i) => p.pdf ? `<div class="clthumb clpdf" data-i="${i}"><button type="button" class="climg" onclick="clPhotoView(${i})" aria-label="Show invoice PDF"><span class="pdfic">PDF</span><small>${esc(p.name || '')}</small></button><button type="button" class="clx" aria-label="Remove PDF" onclick="claimPhotoDrop(${i})">×</button></div>` : `<div class="clthumb" data-i="${i}"><button type="button" class="climg" onclick="clPhotoView(${i})" aria-label="Show invoice photo ${i + 1}"><img alt="" data-ph="${esc(p.id)}"></button><button type="button" class="clx" aria-label="Remove photo" onclick="claimPhotoDrop(${i})">×</button></div>`).join('') ||
     '<p class="muted" style="margin:0;font-size:0.8125rem">No invoice photo yet.</p>';
 }
 async function claimPhotosPaint() {
@@ -963,6 +966,8 @@ function claimPhotoDrop(i) { const p = clEdit.photos.splice(i, 1)[0]; if (p) clE
 async function clPhotoView(i) {
   const p = clEdit && clEdit.photos[i]; if (!p) return;
   const d = await clPhLoad(p);
+  if (d && p.pdf) { pdfView(d, p.name || 'invoice.pdf'); return; }
+  if (!d && p.pdf) { toast('That PDF is on the phone it was added on.'); return; }
   if (!d) { toast(clEdit.awayNote || 'That photo is on the other phone.'); return; }
   const el = document.createElement('div'); el.className = 'phview'; el.id = 'phview';
   el.innerHTML = `<img src="${d}" alt="Invoice photo"><div class="pvbar">${navigator.share ? `<button type="button" class="btn" id="pvshare">${I('share')} Share invoice</button>` : ''}<a class="btn" href="${d}" download="invoice-${i + 1}.jpg">${I('download')} Save</a><button type="button" class="btn primary" id="pvclose">Close</button></div>`;
@@ -981,7 +986,7 @@ const claimPatient = v => v.pt === 'other' ? (v.ptother || '') : v.pt || '';
 function claimText(v) {
   const n = clEdit.photos.length;
   return ['UniMed Smart Claim', 'Policy: ' + (v.policy || '(policy number)'), 'Patient name: ' + (claimPatient(v) || '—'), 'Service provider: ' + (v.provider || '—'), 'Reason for visit: ' + (v.reason || '—'),
-    'Date of visit: ' + (clDmy(v.date) || '—'), 'Amount paid: ' + (claimMoney(claimAmtStr(v.amount)) || '—'), 'Itemised invoice: ' + (n ? n + (n === 1 ? ' photo' : ' photos') : 'not added yet')].concat(v.notes ? ['Notes: ' + v.notes] : []).join('\n');
+    'Date of visit: ' + (clDmy(v.date) || '—'), 'Amount paid: ' + (claimMoney(claimAmtStr(v.amount)) || '—'), 'Itemised invoice: ' + (n ? (clEdit && clEdit.photos.some(p => p.pdf) ? n + (n === 1 ? ' file (PDF)' : ' files') : n + (n === 1 ? ' photo' : ' photos')) : 'not added yet')].concat(v.notes ? ['Notes: ' + v.notes] : []).join('\n');
 }
 async function claimCopy() {
   const t = claimText(claimFormVals());
@@ -1054,6 +1059,243 @@ function claimsCard() {
   return `<div class="sec">UniMed claims</div><div class="list" id="claimlist">${list.map(a => `<button class="row" onclick="claimSheet('a:${a.id}')"><div class="aic">${I('receipt')}</div><div class="tx"><div class="t">${esc(a.title)}</div><div class="s">Visit ${esc(fmtW(a.date))}${a.claim && a.claim.amount ? ' · ' + claimMoney(a.claim.amount) : ''}${a.private ? ' · just me' : ''}</div></div>${a.claim && a.claim.status !== 'none' ? claimChip(a.claim) : '<span class="clchip none">Claim?</span>'}</button>`).join('')}</div>
     <div class="foot" style="margin-top:6px"><a href="${UNIMED_URL}" target="_blank" rel="noopener">Open UniMed Smart Claim</a> · claims for shared appointments show in Shane’s app too.</div>`;
 }
+/* ================= MY OUTLOOK (1.7.0) =================
+   Optional. Sarah signs in to her own Outlook on this phone (Microsoft sign-in, Mail.Read, PKCE; the same app
+   registration as Shane's app; any client secret stays on the relay). Mail is read straight from Microsoft on this
+   phone and is never sent anywhere or saved: only the message ids she dismisses are kept, so they don't come back.
+   It offers doctor, dentist and chiro bookings as suggestions (nothing is added until she taps Add), and lists
+   medical invoice PDFs from the last 3 months for UniMed claims. UniMed logins and one-time codes are skipped:
+   those emails are never opened. */
+const MX_KEY = 'sarahsTodo.outlook', MX_SEEN = 'sarahsTodo.outlookSeen', MX_HINT = 'sarah.jenkins@outlook.co.nz';
+const MX_REDIRECT = 'https://phoneapp12-cell.github.io/sarahs-todo/';
+const MX_RELAY = SHARED_URL.replace(/\/shared-todo$/, '');
+const MX_AUTH = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize', MX_SCOPE = 'offline_access Mail.Read User.Read';
+const mxGet = () => { try { return JSON.parse(localStorage.getItem(MX_KEY) || 'null'); } catch (e) { return null; } };
+const mxSet = v => { try { if (v) localStorage.setItem(MX_KEY, JSON.stringify(v)); else localStorage.removeItem(MX_KEY); } catch (e) { } };
+const mxOn = () => { const b = mxGet(); return !!(b && b.refreshToken); };
+const mxSeen = () => { try { return JSON.parse(localStorage.getItem(MX_SEEN) || '[]'); } catch (e) { return []; } };
+const mxSeenAdd = id => { try { localStorage.setItem(MX_SEEN, JSON.stringify(mxSeen().concat(id).slice(-300))); } catch (e) { } };
+const b64u = bytes => { let s = ''; const a = new Uint8Array(bytes); for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, ''); };
+async function mxClientId() {
+  const r = await fetch(MX_RELAY + '/mail/config', { cache: 'no-store' }); const c = await r.json();
+  return (c && c.microsoft && c.microsoft.clientId) || '';
+}
+async function mxSignIn() {
+  let id = ''; try { id = await mxClientId(); } catch (e) { }
+  if (!id) { toast('Outlook sign-in isn’t available just now. Try again later.'); return; }
+  const raw = crypto.getRandomValues(new Uint8Array(32)), verifier = b64u(raw), challenge = b64u(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  const state = b64u(crypto.getRandomValues(new Uint8Array(16))) + '.mx';
+  try { localStorage.setItem('sarahsTodo.outlookPkce', JSON.stringify({ verifier, state, at: Date.now() })); } catch (e) { toast('This browser won’t keep the sign-in step. Try Chrome or Safari.'); return; }
+  const u = new URL(MX_AUTH);
+  Object.entries({ client_id: id, redirect_uri: MX_REDIRECT, response_type: 'code', response_mode: 'query', scope: MX_SCOPE, state, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account', login_hint: MX_HINT }).forEach(([k, v]) => u.searchParams.set(k, v));
+  location.href = u.toString();
+}
+async function mxToken(body) {
+  const r = await fetch(MX_RELAY + '/mail/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ provider: 'microsoft', redirectUri: MX_REDIRECT }, body)) });
+  const d = await r.json().catch(() => ({})); if (!r.ok || !d.accessToken) throw Object.assign(new Error('mail'), { data: d }); return d;
+}
+async function mxFinish() {
+  let q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+  const code = q.get('code'), err = q.get('error'), state = q.get('state') || '';
+  if ((!code && !err) || !state.endsWith('.mx')) return;
+  try { history.replaceState(null, '', location.pathname + '#appts'); } catch (e) { }
+  let saved = null; try { saved = JSON.parse(localStorage.getItem('sarahsTodo.outlookPkce') || 'null'); localStorage.removeItem('sarahsTodo.outlookPkce'); } catch (e) { }
+  if (err) { toast(/consent|access_denied/i.test(q.get('error_description') || err) ? 'Outlook wasn’t connected.' : 'Microsoft said: ' + (q.get('error_description') || err).slice(0, 140)); return; }
+  if (!saved || saved.state !== state || Date.now() - saved.at > 15 * 60000) { toast('That sign-in step expired. Try Connect again.'); return; }
+  try {
+    const t = await mxToken({ code, codeVerifier: saved.verifier });
+    if (!t.refreshToken) { toast('Sign-in didn’t allow staying connected. Try again.'); return; }
+    const box = { refreshToken: t.refreshToken, accessToken: t.accessToken, expiresAt: Date.now() + (Number(t.expiresIn) || 3600) * 1000 - 60000, email: '' };
+    try { const me = await mxJSON('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', box.accessToken); box.email = me.mail || me.userPrincipalName || ''; } catch (e) { }
+    mxSet(box); toast('Outlook connected' + (box.email ? ': ' + box.email : '') + '.'); mxScan(true);
+  } catch (e) { toast('Couldn’t finish the Outlook sign-in. ' + (e.data && e.data.providerError ? '(' + e.data.providerError + ')' : '')); }
+  render();
+}
+async function mxAccess() {
+  const b = mxGet(); if (!b || !b.refreshToken) return '';
+  if (b.accessToken && b.expiresAt > Date.now() + 30000) return b.accessToken;
+  const t = await mxToken({ refreshToken: b.refreshToken });
+  b.accessToken = t.accessToken; if (t.refreshToken) b.refreshToken = t.refreshToken; b.expiresAt = Date.now() + (Number(t.expiresIn) || 3600) * 1000 - 60000; mxSet(b); return b.accessToken;
+}
+async function mxJSON(url, token, text) {
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 15000);
+  try { const h = { Authorization: 'Bearer ' + token, Accept: 'application/json' }; if (text) h.Prefer = 'outlook.body-content-type="text"';
+    const r = await fetch(url, { headers: h, signal: ctl.signal, cache: 'no-store' }); if (r.status === 401) throw Object.assign(new Error('auth'), { status: 401 }); if (!r.ok) throw new Error('http ' + r.status); return await r.json(); }
+  finally { clearTimeout(tm); }
+}
+function mxDisconnect() {
+  confirmSheet('Disconnect Outlook?', 'This phone forgets your Outlook sign-in and stops reading your mail. Appointments you already added stay.', 'Disconnect', async () => {
+    mxSet(null); try { localStorage.removeItem(MX_SEEN); } catch (e) { } mxSug = []; mxInv = null; mxAt = 0; render();
+    toast('Outlook disconnected on this phone.');
+  });
+}
+// What counts as medical mail
+const MX_SOURCES = [
+  { k: 'cfh', type: 'doctor', provider: 'Central Family Health Care', reason: 'GP / doctor visit', test: m => /@centralfamily\.co\.nz$/i.test(m.addr) || /central\s*family|\bcfhc?\b/i.test(m.name + ' ' + m.subject) },
+  { k: 'tui', type: 'other', provider: 'Tui Chiropractic', reason: 'Chiropractic treatment', test: m => /@tuichiropractic\.co\.nz$/i.test(m.addr) || /\btui\s*chiro/i.test(m.name + ' ' + m.subject) },
+  { k: 'dent', type: 'dentist', provider: '', reason: 'Dental treatment', test: m => /dental|dentist|orthodont/i.test(m.name + ' ' + m.addr + ' ' + m.subject) },
+  { k: 'doc', type: 'doctor', provider: '', reason: 'Doctor visit', test: m => /medical\s*cent|health\s*cent|\bclinic\b|\bsurgery\b|physio|chiropract|optometr|manage\s*my\s*health|healthpoint/i.test(m.name + ' ' + m.addr + ' ' + m.subject) }
+];
+// Never opened: UniMed itself, sign-in codes, passwords
+const mxBlocked = m => /unimed/i.test(m.addr + ' ' + m.name) || /\b(code|passcode|one[- ]time|otp|verif|password|sign[- ]?in|log[- ]?in|security)\b/i.test(m.subject);
+function mxProvider(src, m) {
+  if (src.provider) return src.provider;
+  let n = String(m.name || '').replace(/\s*\(via [^)]*\)/i, '').trim();
+  if (!n || /@/.test(n)) { // only an address: make a name from its domain, e.g. tikipungadentalcentre.nz → Tikipunga Dental Centre
+    const d = String((n || m.addr).split('@')[1] || n).split('.')[0];
+    n = d.replace(/(dental|dentist|medical|health|family|centre|center|clinic|surgery|care|physio|chiro)/gi, ' $1 ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
+  }
+  return n || m.addr;
+}
+const MX_MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+const p2 = n => String(n).padStart(2, '0');
+// Finds the appointment date and time in a booking email. Returns null if no clear future date.
+function mxApptParse(text, receivedAt) {
+  const t = String(text || '').replace(/\s+/g, ' ');
+  const rx = new Date(receivedAt || Date.now()), yr0 = rx.getFullYear();
+  let m, date = '', idx = -1;
+  const M = '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?';
+  if ((m = t.match(new RegExp('\\b(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+of)?\\s+' + M + ',?(?:\\s+(20\\d{2}))?', 'i')))) { date = `${m[3] || yr0}-${p2(MX_MON[m[2].toLowerCase().slice(0, 3)])}-${p2(+m[1])}`; idx = m.index; }
+  else if ((m = t.match(new RegExp('\\b' + M + '\\s+(\\d{1,2})(?:st|nd|rd|th)?,?(?:\\s+(20\\d{2}))?', 'i')))) { date = `${m[3] || yr0}-${p2(MX_MON[m[1].toLowerCase().slice(0, 3)])}-${p2(+m[2])}`; idx = m.index; }
+  else if ((m = t.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2}|\d{2})\b/))) { date = `${m[3].length === 2 ? '20' + m[3] : m[3]}-${p2(+m[2])}-${p2(+m[1])}`; idx = m.index; }
+  if (!date || !parseD(date) || +date.slice(5, 7) > 12) return null;
+  if (!m[3] && parseD(date) < todayT(rx) - DAY) date = (yr0 + 1) + date.slice(4); // "14 Jan" in a December email
+  if (date < todayISO()) return null;
+  const near = t.slice(Math.max(0, idx - 60), idx + 120);
+  let time = '', tm = near.match(/\b(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?m\.?\b/i);
+  if (tm) { let h = +tm[1] % 12; if (/p/i.test(tm[3])) h += 12; if (h < 24) time = p2(h) + ':' + (tm[2] || '00'); }
+  else if ((tm = near.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/))) time = p2(+tm[1]) + ':' + tm[2];
+  return { date, time };
+}
+const mxIsBooking = m => /appointment|booking|booked|reminder|confirm|scheduled|recall|see you/i.test(m.subject + ' ' + m.text) && !/invoice|receipt|statement|newsletter|cancel/i.test(m.subject);
+const mxIsPdf = a => /\.pdf$/i.test(String(a.name || '')) || /pdf/i.test(String(a.contentType || ''));
+const mxSince = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() - 3, 1); };
+let mxSug = [], mxInv = null, mxAt = 0, mxBusy = false, mxErr = '';
+async function mxScan(force) {
+  if (!mxOn() || mxBusy || navigator.onLine === false) return;
+  if (!force && Date.now() - mxAt < 20 * 60000) return;
+  mxBusy = true; mxErr = '';
+  try {
+    let token = await mxAccess();
+    const since = mxSince().toISOString();
+    let url = 'https://graph.microsoft.com/v1.0/me/messages?$filter=' + encodeURIComponent(`receivedDateTime ge ${since}`) + '&$orderby=receivedDateTime%20desc&$top=100&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments';
+    const found = [];
+    for (let page = 0; url && page < 6; page++) {
+      let d; try { d = await mxJSON(url, token); } catch (e) { if (e.status === 401) { const b = mxGet(); b.expiresAt = 0; mxSet(b); token = await mxAccess(); d = await mxJSON(url, token); } else throw e; }
+      (d.value || []).forEach(x => { const m = { id: x.id, subject: x.subject || '', name: (x.from && x.from.emailAddress && x.from.emailAddress.name) || '', addr: (x.from && x.from.emailAddress && x.from.emailAddress.address) || '', at: x.receivedDateTime, text: x.bodyPreview || '', att: !!x.hasAttachments };
+        if (mxBlocked(m)) return; const src = MX_SOURCES.find(s => s.test(m)); if (src) found.push(Object.assign(m, { src })); });
+      url = d['@odata.nextLink'] || '';
+    }
+    const seen = mxSeen(), sug = [];
+    for (const m of found.filter(m => mxIsBooking(m) && !seen.includes(m.id)).slice(0, 15)) {
+      let body = m.text; try { const b = await mxJSON('https://graph.microsoft.com/v1.0/me/messages/' + encodeURIComponent(m.id) + '?$select=body', token, true); body = (b.body && b.body.content) || body; } catch (e) { }
+      const p = mxApptParse(m.subject + ' \n ' + body, m.at); body = '';
+      if (!p) continue;
+      const place = mxProvider(m.src, m), tp = m.src.type;
+      if (S.appts.some(a => a.date === p.date && (!p.time || !a.time || a.time === p.time))) continue; // already in her list
+      if (sug.some(s => s.date === p.date && s.place === place)) continue;
+      sug.push({ mid: m.id, type: tp, title: tp === 'dentist' ? 'Dentist' : m.src.k === 'tui' ? 'Chiropractor' : 'Doctor', place, date: p.date, time: p.time, subject: m.subject.slice(0, 120), at: m.at });
+    }
+    mxSug = sug.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
+    const inv = [];
+    for (const m of found.filter(m => m.att && !mxIsBooking(m)).slice(0, 20)) {
+      try { const a = await mxJSON('https://graph.microsoft.com/v1.0/me/messages/' + encodeURIComponent(m.id) + '/attachments?$select=id,name,contentType,size', token);
+        const pdfs = (a.value || []).filter(mxIsPdf).map(x => ({ id: x.id, name: x.name, size: x.size })); if (pdfs.length) inv.push(Object.assign({}, m, { text: m.text.slice(0, 255), pdfs })); } catch (e) { }
+    }
+    mxInv = inv; mxAt = Date.now();
+  } catch (e) { mxErr = 'Couldn’t read Outlook just now.'; }
+  finally { mxBusy = false; }
+  if (!sheetOpen && curPage() === 'appts') render();
+}
+function mxCard() {
+  const on = mxOn(), b = mxGet() || {};
+  const priv = '<p class="muted mxpriv">Private: your mail is read on this phone only. Nothing from it is sent or saved, and nothing is shared unless you tap Add. UniMed logins and codes are never read.</p>';
+  if (!on) return `<div class="card mxcard" id="mxcard"><div class="cch">${I('mail')}<b>My Outlook</b></div><p class="muted" style="margin:6px 0 8px">Optional. Connect your Outlook and this app suggests your doctor, dentist and chiro bookings, and finds invoice PDFs for UniMed claims.</p>
+    <button class="btn primary small" id="mxconnect" onclick="mxSignIn()">${I('mail')} Connect my Outlook</button>${priv}</div>`;
+  const sug = mxSug.map((s, i) => `<div class="row mxsug" data-mid="${esc(s.mid)}"><div class="aic ${s.type}">${I(APPT_TYPES[s.type][1])}</div><div class="tx"><div class="t">${esc(s.title)} · ${esc(s.place)}</div><div class="s">${esc(fmtW(s.date))}${s.time ? ' · ' + esc(fmtTm(s.time)) : ''}</div><div class="s mxsubj">From: ${esc(s.subject)}</div></div>
+    <div class="ecbtns"><button class="btn small primary" onclick="mxAdd(${i})">${I('plus')} Add</button><button class="btn small" onclick="mxSkip(${i})">Not now</button></div></div>`).join('');
+  return `<div class="card mxcard" id="mxcard"><div class="cch">${I('mail')}<b>My Outlook</b><span class="muted" style="margin-left:auto;font-size:0.8125rem">${esc(b.email || 'Connected')}</span></div>
+    ${mxBusy && !mxAt ? '<p class="muted" style="margin:6px 0">Looking for bookings…</p>' : sug ? `<p class="muted" style="margin:6px 0 4px">Bookings found in your email. Tap Add to keep one.</p><div class="list" id="mxsug">${sug}</div>` : `<p class="muted" style="margin:6px 0" id="mxnone">${mxErr ? esc(mxErr) : 'No new doctor, dentist or chiro bookings in your email.'}</p>`}
+    <div class="btns" style="margin-top:8px"><button class="btn small" onclick="mxScan(true).then(render)">Check again</button><button class="btn small" onclick="mxInvoices()">${I('receipt')} Invoice PDFs</button><button class="btn small danger" id="mxoff" onclick="mxDisconnect()">Disconnect</button></div>${priv}</div>`;
+}
+async function mxAdd(i) {
+  const s = mxSug[i]; if (!s) return;
+  const s0 = snap(), id = uid('ap');
+  S.appts.push({ id, created: Date.now(), type: s.type, title: s.title, date: s.date, time: s.time, place: s.place, notes: '', remind: '60', private: false, claim: null });
+  mxSeenAdd(s.mid); mxSug.splice(i, 1);
+  await save(); render();
+  toast('Added. It’s in Shane’s calendar too.', 'Edit', () => apptForm(id));
+  void s0;
+}
+function mxSkip(i) { const s = mxSug[i]; if (!s) return; mxSeenAdd(s.mid); mxSug.splice(i, 1); render(); }
+// Invoice PDFs → UniMed claim
+function mxInvHtml() {
+  if (mxBusy || !mxInv) return '<p class="muted">Looking through the last 3 months of email…</p>';
+  if (!mxInv.length) return '<p class="muted" id="mxinvnone">No invoice PDFs from Central Family Health, Tui Chiropractic, a dentist or a clinic in the last 3 months.</p>';
+  return `<div class="list" id="mxinv">${mxInv.flatMap((m, i) => m.pdfs.map((a, j) => `<div class="row ecrow"><div class="aic">${I('doc')}</div><div class="tx" style="flex:1;min-width:0"><div class="t">${esc(mxProvider(m.src, m))}</div>
+    <div class="s">${esc(fmtW(String(m.at).slice(0, 10)))} · ${esc(m.subject)}</div><div class="s ecpdf">${esc(a.name)}</div></div>
+    <div class="ecbtns"><button type="button" class="btn small" onclick="mxPreview(${i},${j})">${I('eye')} View</button><button type="button" class="btn small primary" onclick="mxPick(${i},${j})">Use</button></div></div>`)).join('')}</div>
+    <p class="muted" style="font-size:0.8125rem;margin:8px 2px 0">Read from your Outlook on this phone. Nothing is sent. You submit the claim yourself in Smart Claim.</p>`;
+}
+async function mxInvoices() {
+  openSheet('Invoice PDFs from your email', `<div id="mxinvbox">${mxInvHtml()}</div>`, null);
+  if (!mxInv) { await mxScan(true); const b = document.getElementById('mxinvbox'); if (b) b.innerHTML = mxInvHtml(); }
+}
+async function mxBytes(m, a) {
+  const token = await mxAccess();
+  const r = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + encodeURIComponent(m.id) + '/attachments/' + encodeURIComponent(a.id) + '/$value', { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) throw new Error('http ' + r.status); return new Uint8Array(await r.arrayBuffer());
+}
+const u8ToDataUrl = u => new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).replace(/^data:[^;]*;/, 'data:application/pdf;')); fr.readAsDataURL(new Blob([u], { type: 'application/pdf' })); });
+async function mxFetch(i, j) { const m = mxInv[i], a = m && m.pdfs[j]; if (!a) return null; if (!a.data) { toast('Opening the PDF…'); a.bytes = await mxBytes(m, a); a.data = await u8ToDataUrl(a.bytes); } return { m, a }; }
+async function mxPreview(i, j) { try { const x = await mxFetch(i, j); if (x) pdfView(x.a.data, x.a.name); } catch (e) { toast('That PDF could not be opened.'); } }
+let pdfjsP = null;
+function pdfjs() { return pdfjsP || (pdfjsP = import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs').then(m => { m.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs'; return m; }).catch(e => { pdfjsP = null; throw e; })); }
+async function pdfText(u) {
+  try { const lib = await pdfjs(), doc = await lib.getDocument({ data: u.slice(0) }).promise; let t = '';
+    for (let i = 1; i <= Math.min(doc.numPages, 3); i++) { const pg = await doc.getPage(i), c = await pg.getTextContent(); let lastY = null; c.items.forEach(x => { const y = x.transform && x.transform[5]; t += (lastY != null && Math.abs(y - lastY) > 2 ? '\n' : ' ') + x.str; lastY = y; }); t += '\n'; }
+    return t; } catch (e) { return ''; }
+}
+function invParse(text) {
+  const t = String(text || ''), out = {};
+  const amt = t.match(/\b(?:total(?:\s+(?:paid|due|amount|incl\.?\s*gst))?|amount\s+(?:paid|due)|balance(?:\s+due)?|invoice\s+total)\b[^\d$\n]{0,30}\$?\s*(\d{1,5}(?:,\d{3})*\.\d{2})/i) || t.match(/\$\s*(\d{1,5}(?:,\d{3})*\.\d{2})/);
+  if (amt) out.amount = claimAmtStr(amt[1].replace(/,/g, ''));
+  const d = t.match(/\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(20\d{2})\b/i);
+  if (d) out.date = `${d[3]}-${p2(MX_MON[d[2].toLowerCase().slice(0, 3)])}-${p2(+d[1])}`;
+  else { const n = t.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/); if (n) out.date = `${n[3]}-${p2(+n[2])}-${p2(+n[1])}`; }
+  return out;
+}
+async function mxPick(i, j) {
+  let x; try { x = await mxFetch(i, j); } catch (e) { toast('That PDF could not be read.'); return; }
+  if (!x) return;
+  const { m, a } = x, got = Object.assign(invParse(m.text), invParse(await pdfText(a.bytes)));
+  const date = got.date || String(m.at).slice(0, 10), prov = mxProvider(m.src, m), tp = m.src.type;
+  const pid = uid('ph'); await clPhPut(pid, a.data);
+  // Attach to her appointment that day if there is one, otherwise add the visit (shared with Shane like any appointment)
+  let ap = S.appts.find(z => z.date === date && (z.type === tp || (z.place || '').toLowerCase().includes(prov.toLowerCase().split(' ')[0])));
+  if (!ap) { ap = { id: uid('ap'), created: Date.now(), type: tp, title: tp === 'dentist' ? 'Dentist' : m.src.k === 'tui' ? 'Chiropractor' : 'Doctor', date, time: '', place: prov, notes: '', remind: '', private: false, claim: null }; S.appts.push(ap); }
+  const base = ap.claim || claimNorm({});
+  ap.claim = claimNorm(Object.assign({}, base, { patient: base.patient || 'Sarah', provider: base.provider || prov, reason: base.reason || m.src.reason, date: base.date || date, amount: got.amount || base.amount,
+    notes: [base.notes, 'From email: ' + m.subject + ' (' + fmtW(String(m.at).slice(0, 10)) + ')'].filter(Boolean).join('\n'), photos: (base.photos || []).concat([{ id: pid, up: false, pdf: true, name: a.name }]), updated: Date.now() }));
+  await save(); render(); sharedSync();
+  claimSheet('a:' + ap.id);
+  toast(got.amount ? `Filled in from the email: ${claimMoney(ap.claim.amount)} on ${fmtW(ap.claim.date)}.` : 'Filled in from the email. Please check the amount.');
+}
+async function pdfView(data, name) {
+  const el = document.createElement('div'); el.className = 'phview'; el.id = 'phview';
+  el.innerHTML = `<div class="pdfpv" id="pdfpv"><p style="color:#fff">Loading preview…</p></div><div class="pvbar"><button type="button" class="btn" id="pvopen">${I('doc')} Open PDF</button>${navigator.share ? `<button type="button" class="btn" id="pvshare">${I('share')} Share</button>` : ''}<a class="btn" href="${data}" download="${esc(name)}">${I('download')} Save</a><button type="button" class="btn primary" id="pvclose">Close</button></div>`;
+  document.body.appendChild(el);
+  const blob = await (await fetch(data)).blob(), file = new File([blob], name, { type: 'application/pdf' });
+  el.querySelector('#pvclose').onclick = () => el.remove();
+  el.querySelector('#pvopen').onclick = () => { const u = URL.createObjectURL(blob); window.open(u, '_blank'); setTimeout(() => URL.revokeObjectURL(u), 60000); };
+  const sb = el.querySelector('#pvshare');
+  if (sb) sb.onclick = async () => { try { if (navigator.canShare && !navigator.canShare({ files: [file] })) { toast('This phone can’t share files from here. Use Save instead.'); return; } await navigator.share({ files: [file], title: name }); } catch (e) { } };
+  try { const lib = await pdfjs(), doc = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise, pg = await doc.getPage(1);
+    const vp = pg.getViewport({ scale: 1 }), sc = Math.min(2.5, (Math.min(innerWidth, 900) * (devicePixelRatio || 1)) / vp.width), v2 = pg.getViewport({ scale: sc });
+    const cv = document.createElement('canvas'); cv.width = v2.width; cv.height = v2.height; await pg.render({ canvasContext: cv.getContext('2d'), viewport: v2 }).promise;
+    const box = el.querySelector('#pdfpv'); if (box) { box.innerHTML = ''; box.appendChild(cv); } }
+  catch (e) { const box = el.querySelector('#pdfpv'); if (box) box.innerHTML = '<p style="color:#fff">No preview on this phone. Use Open PDF.</p>'; }
+}
 async function apptDelete(id) { const s0 = snap(); S.appts = S.appts.filter(a => a.id !== id); await save(); await closeSheet(); render(); toast('Appointment deleted.', 'Undo', undoTo(s0)); }
 /* ================= START ================= */
 /* Greeting at the top, by the phone's own clock (1.0.3) */
@@ -1080,7 +1322,10 @@ window.addEventListener('offline', () => { sharedErr = 'offline'; if (!sheetOpen
 applyTheme(curTheme());
 load();
 render();
+mxFinish();
 sharedStart();
+mxScan();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') mxScan(); });
 carRefresh();
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') carRefresh(); });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => notifyRefresh()).catch(() => { });
