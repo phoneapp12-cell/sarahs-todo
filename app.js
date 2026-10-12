@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -163,6 +163,79 @@ function wireSeg(name, onPick) {
     if (onPick) onPick(b.dataset.v);
   });
 }
+
+/* ================= BRANDS (1.3.0) =================
+   When something goes on the Shopping list, the app asks “Which brand?” with real options from New World Onerahi's
+   own product search (brand, product, size, shelf price, Clubcard price, gluten-free tag), looked up by the relay,
+   plus Any brand, Other… (typed) and Skip. The choice is kept on the item and goes to Shane's list with it.
+   Prices are the store's website prices on the day looked up, and may change. Offline: skip, choose later. */
+const BRANDS_URL = 'https://due-dates-calendar-relay.phoneapp12.workers.dev/brands';
+const brandKey = b => JSON.stringify([b.brand || '', b.product || '', b.size || '', b.price == null ? '' : b.price, b.per || '', b.promo == null ? '' : b.promo, !!b.club, !!b.gf, b.store || '', b.at || '', !!b.any, !!b.other]);
+const isShop = t => t && String(t.list || '').toLowerCase() === 'shopping';
+const dollars = n => '$' + Number(n).toFixed(2);
+function brandPrice(b) {
+  if (!b || b.price == null) return '';
+  return dollars(b.price) + (b.per ? '/' + b.per : '') + (b.promo != null ? ` (${b.club ? 'Clubcard' : 'special'} ${dollars(b.promo)})` : '');
+}
+function brandLine(b) {
+  if (!b) return '';
+  if (b.any) return 'Any brand';
+  const what = [b.product, b.size].filter(Boolean).join(' ');
+  const pr = brandPrice(b);
+  return [b.brand ? 'Brand: ' + b.brand : '', what, pr ? pr + (b.store ? ' at ' + b.store.replace(/ Onerahi$/, '') : '') : ''].filter(Boolean).join(' · ') + (b.gf ? ' · GF' : '');
+}
+let brandCache = {};
+async function brandFetch(q) {
+  const k = q.toLowerCase().trim();
+  if (brandCache[k] && Date.now() - brandCache[k].at < 6 * 3600e3) return brandCache[k].d;
+  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const r = await fetch(BRANDS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SHARED_KEY, q: k }), signal: ctl.signal });
+    if (!r.ok) throw new Error('http ' + r.status);
+    const d = await r.json();
+    if (!d || !Array.isArray(d.options)) throw new Error('bad');
+    brandCache[k] = { at: Date.now(), d };
+    return d;
+  } finally { clearTimeout(to); }
+}
+let brandOpts = [];
+function brandSheetHtml(t, d, err) {
+  const opts = d && d.options || [];
+  brandOpts = opts;
+  const cur = t.brand;
+  const curIdx = cur && !cur.any && !cur.other ? opts.findIndex(o => o.brand === cur.brand && o.product === cur.product && o.size === cur.size) : -1;
+  const radio = (v, on, main, sub, gf) => `<label class="bopt"><input type="radio" name="pick" value="${v}" ${on ? 'checked' : ''}><span><b>${main}${gf ? ' <i class="gf">GF</i>' : ''}</b>${sub ? `<small>${sub}</small>` : ''}</span></label>`;
+  return `<p class="muted" style="margin:-4px 2px 10px">For <b>${esc(t.title)}</b>${d && d.store ? ` · from ${esc(d.store)}` : ''}</p>
+    <div class="bopts" id="bopts">${err ? `<p class="muted" id="brandsnone" style="margin:0 2px 10px">${esc(err)}</p>` : ''}
+    ${opts.map((o, i) => radio(i, i === curIdx, esc(o.brand || o.product), esc([o.brand ? o.product : '', o.size].filter(Boolean).join(' ')) + (brandPrice(o) ? ' · ' + esc(brandPrice(o)) : ''), o.gf)).join('')}
+    ${radio('any', cur && cur.any, 'Any brand', 'Whatever’s good or on special')}
+    ${radio('other', cur && cur.other, 'Other…', 'Type a brand')}
+    <input name="other" id="brandother" placeholder="e.g. Pams, Anchor" maxlength="60" value="${cur && cur.other ? esc(cur.brand) : ''}" style="${cur && cur.other ? '' : 'display:none'}"></div>
+    ${opts.length ? `<p class="muted" style="margin:8px 2px 0;font-size:0.78125rem">Prices from New World’s website today. They can change in store.</p>` : ''}`;
+}
+async function brandAsk(id) {
+  const t = S.todos.find(x => x.id === id); if (!t) return;
+  if (navigator.onLine === false) { if (sheetOpen) await closeSheet(); toast('No signal. Choose a brand later from the item.'); return; }
+  if (sheetOpen) await closeSheet();
+  const submit = async v => {
+    const p = v.pick;
+    if (!p) return 'Please pick one, or tap Skip.';
+    const at = todayISO(), s0 = snap();
+    if (p === 'any') t.brand = { any: true, at };
+    else if (p === 'other') { if (!v.other) return 'Please type the brand.'; t.brand = { brand: v.other.slice(0, 60), other: true, at }; }
+    else { const o = brandOpts[+p]; if (!o) return 'Please pick one.'; t.brand = { brand: o.brand, product: o.product, size: o.size, price: o.price, per: o.per, promo: o.promo, club: o.club, gf: o.gf, store: o.store || 'New World Onerahi', at }; }
+    await save(); render(); toast('Brand saved' + (t.private ? '.' : '. Shane will see it too.'), 'Undo', undoTo(s0));
+  };
+  openSheet('Which brand?', `<p class="muted" id="brandload" style="margin:6px 2px 14px">Looking at New World Onerahi…</p>`, submit, 'Save');
+  const skip = document.querySelector('#sf .btns .btn:not(.primary)'); if (skip) skip.textContent = 'Skip';
+  let d = null, err = '';
+  try { d = await brandFetch(t.title); if (!d.options.length) err = 'No matches at New World for that. Pick Any brand or type one.'; }
+  catch (e) { err = 'Couldn’t look up brands just now. Pick Any brand or type one.'; }
+  const box = document.getElementById('brandload'); if (!box || !sheetOpen) return;
+  box.outerHTML = brandSheetHtml(t, d ? Object.assign({}, d, { options: d.options.map(o => Object.assign({ store: d.store }, o)) }) : null, err);
+  document.querySelectorAll('#bopts input[name=pick]').forEach(r => r.addEventListener('change', () => { const o = $('#brandother'); o.style.display = r.value === 'other' && r.checked ? '' : 'none'; if (r.value === 'other') o.focus(); }));
+}
+async function brandClear(id) { const t = S.todos.find(x => x.id === id); if (!t) return; const s0 = snap(); delete t.brand; await save(); await closeSheet(); render(); toast('Brand removed.', 'Undo', undoTo(s0)); }
 /* ================= TO-DO (same as My App's To-do tab) ================= */
 let todoFilter = 'All';
 function pill(d, prefix = '') {
@@ -188,8 +261,8 @@ function Todo() {
   const open = vis.filter(t => !t.done).sort(cmpOpenTodo);
   const done = vis.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
   const row = t => `<div class="row ${t.done ? 'done' : ''}" data-id="${esc(t.id)}"><button type="button" class="tick" aria-label="${t.done ? 'Mark not done' : 'Mark complete'}: ${esc(t.title)}" onclick="tick('${t.id}')"><span>${I('check')}</span></button>
-    <button class="tapzone" onclick="todoForm('${t.id}')"><div class="tx"><div class="t">${shaneBadge(t)}${esc(t.title)}</div><div class="s">${esc(t.list)}${t.private ? ' · just me' : ''}${t.done ? '' : todoPriMark(t)}${t.due && !t.done ? ' · ' + fmtW(t.due) : ''}${!t.due && !t.done ? ' · no date' : ''}</div></div>
-    ${t.due && !t.done ? pill(daysLeft(t.due)) : ''}</button></div>`;
+    <button class="tapzone" onclick="todoForm('${t.id}')"><div class="tx"><div class="t">${shaneBadge(t)}${esc(t.title)}</div><div class="s">${esc(t.list)}${t.private ? ' · just me' : ''}${t.done ? '' : todoPriMark(t)}${t.due && !t.done ? ' · ' + fmtW(t.due) : ''}${!t.due && !t.done ? ' · no date' : ''}</div>${t.brand ? `<div class="s brandline">${esc(brandLine(t.brand))}</div>` : ''}</div>
+    ${t.due && !t.done ? pill(daysLeft(t.due)) : ''}</button>${isShop(t) && !t.done && !t.brand ? `<button type="button" class="brandbtn" onclick="brandAsk('${t.id}')">Brand?</button>` : ''}</div>`;
   const openCount = S.todos.filter(t => !t.done).length;
   return header('To-do', openCount ? plural(openCount, 'thing') + ' to do' : 'Nothing to do', themeDots() + addBtn('Add a to-do', 'todoForm()')) +
     `<div class="chips">${['All', ...S.lists].map(l => `<button class="chip ${l === todoFilter ? 'on' : ''}" onclick="setTodoFilter(${jsArg(l)})">${esc(l)}</button>`).join('')}
@@ -208,8 +281,11 @@ async function quickAdd(e) {
   e.preventDefault();
   const v = $('#newtodo').value.trim(); if (!v) return;
   const share = !$('#shareshane') || $('#shareshane').checked;
-  S.todos.push(Object.assign({ id: uid('st'), title: v.slice(0, 120), list: todoFilter === 'All' ? S.lists[0] : todoFilter, due: '', notes: '', priority: 'normal', done: false, created: Date.now() }, share ? {} : { private: true }));
-  await save(); render(); $('#newtodo').focus(); toast(share ? 'Added. Shane can see it too.' : 'Added, just for you.');
+  const nid = uid('st'), nlist = todoFilter === 'All' ? S.lists[0] : todoFilter;
+  S.todos.push(Object.assign({ id: nid, title: v.slice(0, 120), list: nlist, due: '', notes: '', priority: 'normal', done: false, created: Date.now() }, share ? {} : { private: true }));
+  await save(); render();
+  if (isShop({ list: nlist })) { if (navigator.onLine === false) toast('Added. Choose a brand later, when you have signal.'); else brandAsk(nid); return; }
+  $('#newtodo').focus(); toast(share ? 'Added. Shane can see it too.' : 'Added, just for you.');
 }
 async function tick(id) {
   const t = S.todos.find(x => x.id === id); if (!t) return;
@@ -235,6 +311,8 @@ function todoForm(id) {
     `<div class="two">${field('List', sel('list', S.lists.map(l => [l, l]), t.list))}${field('Priority', sel('priority', [['high', 'High'], ['normal', 'Normal'], ['low', 'Low']], todoPriority(t)))}</div>` +
     field('Due date', inp('due', t.due, 'type="date"'), 'Optional') +
     field('Notes', area('notes', t.notes)) +
+    (id && (isShop(t) || t.brand) ? `<div class="brandbox" id="brandbox"><div><b>Brand</b><small>${t.brand ? esc(brandLine(t.brand)) + (t.brand.at ? ' · looked up ' + esc(fmt(t.brand.at)) : '') : 'Not chosen yet'}</small></div>
+      <div class="bbtns"><button type="button" class="btn small" onclick="brandAsk('${id}')">${t.brand ? 'Change brand' : 'Choose brand'}</button>${t.brand ? `<button type="button" class="btn small" onclick="brandClear('${id}')">Remove</button>` : ''}</div></div>` : '') +
     (t.by === 'shane' ? `<p class="muted" id="shanenote" style="margin:4px 2px 0">${shaneBadge(t)} Shane added this from his list. Ticks and changes go back to him.</p>` :
       `<label class="sharebox"><input type="checkbox" name="share" ${t.private ? '' : 'checked'}><span><b>Share with Shane</b><small>${id ? (t.private ? 'Just on your list at the moment. Tick to put it on Shane’s list too.' : 'On Shane’s list too. Untick to keep it just on yours.') : 'Untick to keep it just on your list.'}</small></span></label>`) +
     (id ? `<div class="btns" style="margin-top:4px"><button type="button" class="btn" onclick="tick('${id}')">${I('check')} ${t.done ? 'Mark not done' : 'Mark complete'}</button></div>` : ''),
@@ -244,8 +322,10 @@ function todoForm(id) {
       const s = snap();
       const share = t.by === 'shane' || v.share === 'on';
       if (id) { Object.assign(t, { title: v.title.slice(0, 120), list: v.list, due: v.due, notes: v.notes, priority }); if (share) delete t.private; else t.private = true; }
-      else S.todos.push(Object.assign({ id: uid('st'), title: v.title.slice(0, 120), list: v.list, due: v.due, notes: v.notes, priority, done: false, created: Date.now() }, share ? {} : { private: true }));
+      let nid = '';
+      if (!id) { nid = uid('st'); S.todos.push(Object.assign({ id: nid, title: v.title.slice(0, 120), list: v.list, due: v.due, notes: v.notes, priority, done: false, created: Date.now() }, share ? {} : { private: true })); }
       await save(); render(); toast(id ? 'To-do updated.' : share ? 'Added. Shane can see it too.' : 'Added, just for you.', 'Undo', undoTo(s));
+      if (nid && isShop({ list: v.list }) && navigator.onLine !== false) return () => brandAsk(nid);
     }, id ? 'Save' : 'Add',
     id ? `<button type="button" class="btn danger" style="flex:0 0 auto" aria-label="Delete to-do" onclick="deleteTodo('${id}')">${I('trash')}</button>` : '');
 }
@@ -281,8 +361,8 @@ const SH = {
   items: () => S.todos.filter(t => !t.private), // 1.1.2: private ones never leave this phone
   by: t => t && t.by === 'shane' ? 'shane' : 'sarah',
   want: () => true,
-  add: s => { if (S.todos.some(t => t.id === s.id)) return; /* a private one: stays private (the next sync takes it off the shared list) */ s = Object.assign({}, s, { list: listIn(s.list) }); S.todos.push(Object.assign({ id: s.id, title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done, doneAt: s.doneAt || undefined, created: s.created }, s.by === 'shane' ? { by: 'shane' } : {})); if (!S.lists.includes(s.list)) S.lists.push(s.list); },
-  update: (t, s) => { s = Object.assign({}, s, { list: listIn(s.list) }); Object.assign(t, { title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done }); if (s.done) t.doneAt = s.doneAt || Date.now(); else delete t.doneAt; if (!S.lists.includes(s.list)) S.lists.push(s.list); },
+  add: s => { if (S.todos.some(t => t.id === s.id)) return; /* a private one: stays private (the next sync takes it off the shared list) */ s = Object.assign({}, s, { list: listIn(s.list) }); S.todos.push(Object.assign({ id: s.id, title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done, doneAt: s.doneAt || undefined, created: s.created }, s.by === 'shane' ? { by: 'shane' } : {}, s.brand ? { brand: s.brand } : {})); if (!S.lists.includes(s.list)) S.lists.push(s.list); },
+  update: (t, s) => { s = Object.assign({}, s, { list: listIn(s.list) }); Object.assign(t, { title: s.title, list: s.list, due: s.due, notes: s.notes, priority: s.priority, done: s.done }); if (s.brand) t.brand = s.brand; else delete t.brand; if (s.done) t.doneAt = s.doneAt || Date.now(); else delete t.doneAt; if (!S.lists.includes(s.list)) S.lists.push(s.list); },
   remove: id => { S.todos = S.todos.filter(t => t.id !== id); },
   persist: async changed => {
     sharedApplying = true;
@@ -298,7 +378,7 @@ const SH = {
 const SHARED_URL = 'https://due-dates-calendar-relay.phoneapp12.workers.dev/shared-todo';
 const SHARED_KEY = 'sArgfZGJrHxJN9I319FJeFLhFshrHsRU2xDFnnLL'; // only opens this one shared list
 const SHARED_FIELDS = ['title', 'list', 'due', 'notes', 'priority', 'done'];
-const sharedHash = t => JSON.stringify(SHARED_FIELDS.map(k => k === 'done' ? !!t[k] : String(t[k] == null ? '' : t[k])));
+const sharedHash = t => JSON.stringify(SHARED_FIELDS.map(k => k === 'done' ? !!t[k] : String(t[k] == null ? '' : t[k])).concat(t.brand ? [brandKey(t.brand)] : []));
 let sharedBusy = false, sharedTimer = null, sharedLastOk = 0, sharedErr = '';
 function sharedState() { const s = SH.state(); if (!s.snap || typeof s.snap !== 'object') s.snap = {}; if (!s.pend || typeof s.pend !== 'object') s.pend = {}; return s; }
 // Spot local changes since the last agreed version and queue them (called on every save)
@@ -310,7 +390,7 @@ function sharedNote() {
     if (st.snap[t.id] === h) { delete st.pend[t.id]; return; }
     const p = st.pend[t.id];
     if (p && !p.deleted && sharedHash(p) === h) return; // already queued
-    st.pend[t.id] = Object.assign({ id: t.id, created: t.created || now, by: SH.by(t), doneAt: t.done ? t.doneAt || now : 0, updated: now }, Object.fromEntries(SHARED_FIELDS.map(k => [k, k === 'done' ? !!t[k] : (t[k] || '')])));
+    st.pend[t.id] = Object.assign({ id: t.id, created: t.created || now, by: SH.by(t), doneAt: t.done ? t.doneAt || now : 0, updated: now }, Object.fromEntries(SHARED_FIELDS.map(k => [k, k === 'done' ? !!t[k] : (t[k] || '')])), t.brand ? { brand: t.brand } : {});
   });
   Object.keys(st.snap).forEach(id => { if (!seen.has(id) && !(st.pend[id] && st.pend[id].deleted)) st.pend[id] = { id, deleted: true, updated: now }; });
 }
