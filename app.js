@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -292,7 +292,9 @@ function Todo() {
     <label class="sharechk"><input type="checkbox" id="shareshane" checked> Share with Shane</label>
     ${open.length ? `<div class="list" id="openlist">${open.map(row).join('')}</div>` : (S.todos.length ? '<div class="card empty"><div class="t">All done. Good as gold!</div></div>' : empty('Nothing on your list', 'Type a to-do above and tap +, or add one with a due date.', 'Add a to-do', 'todoForm()'))}
     ${done.length ? `<div class="sec">Done <button onclick="clearDone()">Clear done</button></div><div class="list" id="donelist">${done.map(row).join('')}</div>` : ''}
+    ${growCard()}
     ${themePicker()}
+    ${growOn() ? '' : '<div class="foot"><button type="button" style="color:var(--brand);font-weight:600" onclick="growToggle(true)">Show daily channel tips</button></div>'}
     <div class="foot" id="syncline">${esc(syncLine())}<br>Shared to-dos show on Shane’s list too, and he can tick them off. ${S.todos.length ? '' : ''}Sarah’s To-do ${APP_VERSION}</div><div class="foot" id="notifyline" style="margin-top:-6px">${notifyLine()}</div>`;
 }
 function setTodoFilter(l) { todoFilter = l; render(); }
@@ -539,6 +541,79 @@ function curTheme() { try { return localStorage.getItem(THEME_KEY) === 'purple' 
 function applyTheme(k) {
   document.documentElement.setAttribute('data-theme', k);
   const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', THEMES[k][1]);
+}
+
+/* ===== Grow your channel (1.8.0): one real YouTube tip a day, picked by date. Optional. ===== */
+const GROW_TIPS = [
+  'Make your thumbnail readable at phone size: one face or object, big contrast, three words or fewer.',
+  'Try a close-up of your face showing real emotion in the thumbnail. Faces tend to get more clicks.',
+  'Keep titles under about 60 characters so they don’t get cut off on phones.',
+  'Put the most interesting words at the start of your title.',
+  'Make the title and thumbnail tell one story together, without repeating the same words.',
+  'Hook people in the first 15 seconds: show the best moment or say what they’ll get, then start.',
+  'Skip long intros. Start with the action and introduce yourself later, if at all.',
+  'Cut out pauses and slow bits. Tighter edits keep people watching longer.',
+  'Make a Short from your latest video: pick its best 30–50 seconds and film or crop it upright.',
+  'Pin a Short to your channel that links to the full video using the related video link.',
+  'Pick one or two upload days and stick to them, so viewers know when to expect you.',
+  'Add an end screen pointing to your best video or a playlist, so people keep watching.',
+  'Ask one simple question near the end of your video so people answer in the comments.',
+  'Reply to comments in the first hour after you upload. It builds a loyal crowd.',
+  'Heart and pin a good comment to get conversation going.',
+  'Post in the Community tab between uploads: a poll, a photo or a sneak peek.',
+  'Run a poll in the Community tab asking what video people want next.',
+  'Group your videos into playlists by topic, so one view turns into several.',
+  'Order your playlists so the strongest video comes first.',
+  'Write the first two lines of your description like a mini hook, because that’s what shows.',
+  'Use the words people would actually search for in your title and description.',
+  'Type your topic into YouTube search and check the suggestions for title ideas.',
+  'Add chapters (timestamps) to longer videos so people can jump to what they want.',
+  'Add a few relevant tags, including common misspellings of your topic.',
+  'Collaborate with a creator about your size. You both reach new viewers.',
+  'Feature or shout out a viewer’s comment in a video. People love being seen.',
+  'Check audience retention in YouTube Studio and look for where people drop off.',
+  'Look at the first 30 seconds on your retention graph. A big drop means the hook needs work.',
+  'Compare click-through rate between videos to learn which thumbnails work best for you.',
+  'Look at “When your viewers are on YouTube” in Analytics and upload a couple of hours before.',
+  'Check “Traffic sources” to see if people find you through search, Shorts or suggestions.',
+  'Make more of whatever your best video was about. Your viewers have already told you what they like.',
+  'Upload a custom thumbnail for every video. The auto pick is rarely your best frame.',
+  'Use A/B testing for thumbnails in YouTube Studio when it’s available to you.',
+  'Add captions or check the automatic ones. More people watch with the sound off than you’d think.',
+  'Say your call to subscribe once, after you’ve given something good, not at the very start.',
+  'Make a channel trailer for people who haven’t subscribed yet.',
+  'Make a clear channel banner that says what your channel is about and when you post.',
+  'Fill in the About section with what you make and who it’s for.',
+  'Share your new video in places your viewers already are, like a group chat or social page.',
+  'Batch film two or three videos on one day, so upload days don’t get stressful.',
+  'Keep a list of video ideas on your phone and add to it whenever one pops up.',
+  'Watch your own video back on your phone before posting. Check sound, brightness and the hook.',
+  'Good sound matters more than a fancy camera. Film somewhere quiet or use a cheap clip-on mic.',
+  'Film near a window for soft, flattering light.',
+  'Try a series, like a weekly diary or update, so people come back for the next one.',
+  'Use the Premiere option sometimes, so viewers can chat while it first plays.',
+  'Go live now and then. Live chats help people feel they know you.',
+  'Re-check old videos: a better title or thumbnail can give them a second life.',
+  'Celebrate small wins. Every new subscriber is a real person who liked what you made.'
+];
+const growOn = () => localStorage.getItem('growTips') !== 'off';
+async function growToggle(on) { localStorage.setItem('growTips', on ? 'on' : 'off'); render(); toast(on ? 'Channel tips are on.' : 'Channel tips are off. Turn them back on at the bottom of the page.'); }
+let GROW_V = null; try { GROW_V = JSON.parse(localStorage.getItem('growV') || 'null'); } catch (e) { GROW_V = null; }
+async function growLoad() {
+  if (!growOn() || (GROW_V && Date.now() - GROW_V.at < 3 * 3600e3)) return;
+  try { const r = await fetch(SHARED_URL.replace(/\/shared-todo$/, '/sarah')); if (!r.ok) return; const d = await r.json(); const v = Array.isArray(d.videos) ? d.videos[0] : null;
+    GROW_V = { at: Date.now(), title: v && v.title ? String(v.title).slice(0, 100) : '' }; localStorage.setItem('growV', JSON.stringify(GROW_V)); render(); } catch (e) { }
+}
+function growTip() {
+  const day = Math.floor((Date.now() + 13 * 3600e3) / 864e5), t = GROW_TIPS[day % GROW_TIPS.length], v = GROW_V && GROW_V.title;
+  if (v && /^Make a Short from your latest video/.test(t)) return `Make a Short from “${v}”: pick its best 30–50 seconds and film or crop it upright.`;
+  if (v && /thumbnail|title|description|chapters|captions|end screen|Short/i.test(t) && !/old videos/.test(t)) return t + ` Try it on your latest, “${v}”.`;
+  return t;
+}
+function growCard() {
+  if (!growOn()) return '';
+  setTimeout(growLoad, 50);
+  return `<div class="card growcard" id="growcard"><div class="t" style="font-weight:800;margin-bottom:4px">🌱 Grow your channel</div><div class="s">${esc(growTip())}</div><div style="margin-top:8px;font-size:0.8125rem"><button type="button" style="color:var(--brand);font-weight:600;padding:2px 0" onclick="growToggle(false)">Hide channel tips</button> · <span class="muted">A new tip each day. You’re doing great!</span></div></div>`;
 }
 function themePicker() {
   const c = curTheme();
