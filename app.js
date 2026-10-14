@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.8.1';
+const APP_VERSION = '1.9.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -82,6 +82,9 @@ function normalise(d) {
     place: String(a.place || '').slice(0, 160), notes: String(a.notes || '').slice(0, 1000), remind: APPT_REMIND.some(x => x[0] === String(a.remind == null ? '' : a.remind)) ? String(a.remind == null ? '' : a.remind) : '',
     private: a.by === 'shane' ? false : !!a.private, created: Number(a.created) || Date.now(), claim: claimNorm(a.claim), ...(a.by === 'shane' ? { by: 'shane' } : {}) }));
   d.car = d.car && typeof d.car === 'object' && d.car.plate ? d.car : null;
+  // 1.9.0: Video ideas, her own list (kept on this phone, never shared)
+  d.vids = (Array.isArray(d.vids) ? d.vids : []).filter(v => v && v.id && v.title).map(v => ({ id: String(v.id), title: String(v.title).slice(0, 160), done: !!v.done, created: Number(v.created) || Date.now(), ...(v.sug ? { sug: true } : {}) }));
+  d.vidSug = d.vidSug && typeof d.vidSug === 'object' ? { week: Number(d.vidSug.week) || 0, n: Number(d.vidSug.n) || 0 } : { week: 0, n: 0 };
   d.version = 1;
   return d;
 }
@@ -284,7 +287,7 @@ function Todo() {
     ${t.due && !t.done ? pill(daysLeft(t.due)) : ''}</button>${isShop(t) && !t.done && !t.brand ? `<button type="button" class="brandbtn" onclick="brandAsk('${t.id}')">Brand?</button>` : ''}</div>`;
   const openCount = S.todos.filter(t => !t.done).length;
   return header('To-do', openCount ? plural(openCount, 'thing') + ' to do' : 'Nothing to do', themeDots() + addBtn('Add a to-do', 'todoForm()')) +
-    `${growCard()}<div class="chips">${['All', ...S.lists].map(l => `<button class="chip ${l === todoFilter ? 'on' : ''}" onclick="setTodoFilter(${jsArg(l)})">${esc(l)}</button>`).join('')}
+    `${growCard()}${vidCard()}<div class="chips">${['All', ...S.lists].map(l => `<button class="chip ${l === todoFilter ? 'on' : ''}" onclick="setTodoFilter(${jsArg(l)})">${esc(l)}</button>`).join('')}
       <button class="chip plus" onclick="listForm()">+ New list</button></div>
     ${todoFilter === 'Shopping' ? `<div class="muted" id="shopnote" style="margin:-2px 4px 10px;font-size:0.84375rem">These also go on Shane’s shopping list.</div>` : ''}
     ${todoFilter !== 'All' && !isFixedList(todoFilter) ? `<div style="display:flex;gap:18px;margin:-2px 4px 10px;font-size:0.875rem;font-weight:600"><button style="color:var(--brand);padding:4px 0" onclick="listForm(${jsArg(todoFilter)})">Rename list</button><button style="color:var(--red);padding:4px 0" onclick="deleteList(${jsArg(todoFilter)})">Delete list</button></div>` : ''}
@@ -614,6 +617,71 @@ function growCard() {
   setTimeout(growLoad, 50);
   return `<div class="card growcard" id="growcard"><div class="t" style="font-weight:800;margin-bottom:4px">🌱 Grow your channel</div><div class="s">${esc(growTip())}</div><div style="margin-top:8px;font-size:0.8125rem"><button type="button" style="color:var(--brand);font-weight:600;padding:2px 0" onclick="growToggle(false)">Hide channel tips</button> · <span class="muted">A new tip each day. You’re doing great!</span></div></div>`;
 }
+
+/* ===== Video ideas (1.9.0): her own list, plus one sunset suggestion a week ===== */
+const SUNSET_IDEAS = [
+  'Time-lapse from a new Onerahi spot you haven’t filmed before',
+  'Golden hour reflections on the harbour, filmed low near the water',
+  'The same spot across the seasons: film it now and add a clip each month',
+  'Sunset with the tide coming in: line up the camera on the waterline',
+  'Birds heading home at sunset: wait for the flocks over the estuary',
+  'A week of sunsets: one clip a night, stitched together',
+  'A Short of the best 30 seconds from your latest sunset',
+  'Behind the scenes of your setup: phone, tripod and where you stand',
+  'Tips for filming sunsets without a drone',
+  'Sunset from Mount Parihaka looking over Whangārei',
+  'Sunset at the Town Basin with the boats and lights coming on',
+  'Before and after: the sky 20 minutes before sunset and 20 minutes after',
+  'The afterglow: keep filming once the sun has gone down',
+  'Clouds versus clear sky: the same spot on two different nights',
+  'A sunrise for a change, and compare it with your sunsets',
+  'Silhouettes at sunset: people, trees or a jetty against the sky',
+  'A slow pan across the sky instead of a still shot',
+  'A rainy-day sunset: when the sky breaks after a shower',
+  'Sunset with calm music and no talking, for a relaxing watch',
+  'Talk to camera for 15 seconds about why you love this spot, then the sunset',
+  'Sunset through the trees or a pōhutukawa in flower',
+  'Your top 5 sunsets so far, counted down',
+  'Sunset with the moon rising on the other side',
+  'Film the colours changing on the water, not just the sky',
+  'A beach sunset with footprints or waves in the foreground',
+  'How you check sunset times and weather before heading out',
+  'Sunset from a lookout on the drive home: a quick roadside stop',
+  'A windy-day sunset with moving clouds sped up',
+  'A winter versus summer sunset at the same place',
+  'Viewers’ choice: ask in the comments where to film next',
+  'Sunset at Ocean Beach or Whangārei Heads',
+  'A whole sunset in one long take, from bright to dark',
+  'A slow-motion clip of waves glowing in the last light'
+];
+const vidWeek = () => Math.floor((Date.now() + 13 * 3600e3 - 4 * 864e5) / (7 * 864e5)); // weeks start Monday NZ
+function vidWeekly() {
+  const w = vidWeek(); if (S.vidSug.week === w) return false;
+  S.vids = S.vids.filter(v => !v.sug); // last week's suggestion goes if it wasn't kept
+  const n = S.vidSug.n % SUNSET_IDEAS.length;
+  S.vids.unshift({ id: uid('vid'), title: SUNSET_IDEAS[n], done: false, created: Date.now(), sug: true });
+  S.vidSug = { week: w, n: n + 1 }; return true;
+}
+function vidCard() {
+  try { if (vidWeekly()) save(); } catch (e) { }
+  const open = S.vids.filter(v => !v.done), done = S.vids.filter(v => v.done);
+  const row = v => `<div class="row ${v.done ? 'done' : ''}">${v.sug ? '' : `<button type="button" class="tick" aria-label="${v.done ? 'Mark not done' : 'Mark done'}: ${esc(v.title)}" onclick="vidTick('${v.id}')"><span>${I('check')}</span></button>`}
+    <button class="tapzone" onclick="${v.sug ? '' : `vidForm('${v.id}')`}"><div class="tx"><div class="t">${v.sug ? '<span class="sugtag">Suggestion</span> ' : ''}${esc(v.title)}</div>${v.sug ? `<div class="s" style="display:flex;gap:14px;margin-top:6px"><span role="button" tabindex="0" class="sugbtn" onclick="event.stopPropagation();vidKeep('${v.id}')">Keep</span><span role="button" tabindex="0" class="sugbtn off" onclick="event.stopPropagation();vidDismiss('${v.id}')">Dismiss</span></div>` : ''}</div></button></div>`;
+  return `<div class="sec" style="margin-top:4px">🎬 Video ideas <button onclick="vidForm()">+ Add</button></div>
+    <div class="list" id="vidlist">${open.length ? open.map(row).join('') : '<div class="row"><div class="tx" style="padding:6px 4px"><div class="s">No video ideas yet. Tap + Add.</div></div></div>'}${done.map(row).join('')}</div>`;
+}
+function vidForm(id) {
+  const v = id ? S.vids.find(x => x.id === id) : null;
+  openSheet(v ? 'Edit video idea' : 'New video idea', field('Idea', inp('title', v ? v.title : '', 'placeholder="e.g. Sunset at the Town Basin" required maxlength="160"')), async f => {
+    if (!f.title) return 'Please type an idea.';
+    if (v) v.title = f.title; else S.vids.unshift({ id: uid('vid'), title: f.title, done: false, created: Date.now() });
+    await save(); render();
+  }, v ? 'Save' : 'Add', v ? `<button type="button" class="btn" style="color:#c0264b" onclick="vidDelete('${v.id}')">Delete</button>` : '');
+}
+async function vidTick(id) { const v = S.vids.find(x => x.id === id); if (!v) return; v.done = !v.done; await save(); render(); }
+async function vidKeep(id) { const v = S.vids.find(x => x.id === id); if (!v) return; delete v.sug; await save(); render(); toast('Added to your video ideas.'); }
+async function vidDismiss(id) { S.vids = S.vids.filter(x => x.id !== id); await save(); render(); toast('Dismissed. A new idea comes next week.'); }
+async function vidDelete(id) { const s = snap(); S.vids = S.vids.filter(x => x.id !== id); await save(); await closeSheet(); render(); toast('Video idea deleted.', 'Undo', undoTo(s)); }
 function themePicker() {
   const c = curTheme();
   return `<div class="themepick" id="themepick" role="radiogroup" aria-label="Colour">Colour${Object.entries(THEMES).map(([k, [l, hex]]) => `<button type="button" class="swatch ${k === c ? 'on' : ''}" role="radio" aria-checked="${k === c}" data-theme-pick="${k}" onclick="setTheme('${k}')"><i style="background:${hex}"></i>${l}</button>`).join('')}</div>`;
