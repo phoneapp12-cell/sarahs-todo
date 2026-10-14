@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.8.1';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -284,7 +284,7 @@ function Todo() {
     ${t.due && !t.done ? pill(daysLeft(t.due)) : ''}</button>${isShop(t) && !t.done && !t.brand ? `<button type="button" class="brandbtn" onclick="brandAsk('${t.id}')">Brand?</button>` : ''}</div>`;
   const openCount = S.todos.filter(t => !t.done).length;
   return header('To-do', openCount ? plural(openCount, 'thing') + ' to do' : 'Nothing to do', themeDots() + addBtn('Add a to-do', 'todoForm()')) +
-    `<div class="chips">${['All', ...S.lists].map(l => `<button class="chip ${l === todoFilter ? 'on' : ''}" onclick="setTodoFilter(${jsArg(l)})">${esc(l)}</button>`).join('')}
+    `${growCard()}<div class="chips">${['All', ...S.lists].map(l => `<button class="chip ${l === todoFilter ? 'on' : ''}" onclick="setTodoFilter(${jsArg(l)})">${esc(l)}</button>`).join('')}
       <button class="chip plus" onclick="listForm()">+ New list</button></div>
     ${todoFilter === 'Shopping' ? `<div class="muted" id="shopnote" style="margin:-2px 4px 10px;font-size:0.84375rem">These also go on Shane’s shopping list.</div>` : ''}
     ${todoFilter !== 'All' && !isFixedList(todoFilter) ? `<div style="display:flex;gap:18px;margin:-2px 4px 10px;font-size:0.875rem;font-weight:600"><button style="color:var(--brand);padding:4px 0" onclick="listForm(${jsArg(todoFilter)})">Rename list</button><button style="color:var(--red);padding:4px 0" onclick="deleteList(${jsArg(todoFilter)})">Delete list</button></div>` : ''}
@@ -292,7 +292,6 @@ function Todo() {
     <label class="sharechk"><input type="checkbox" id="shareshane" checked> Share with Shane</label>
     ${open.length ? `<div class="list" id="openlist">${open.map(row).join('')}</div>` : (S.todos.length ? '<div class="card empty"><div class="t">All done. Good as gold!</div></div>' : empty('Nothing on your list', 'Type a to-do above and tap +, or add one with a due date.', 'Add a to-do', 'todoForm()'))}
     ${done.length ? `<div class="sec">Done <button onclick="clearDone()">Clear done</button></div><div class="list" id="donelist">${done.map(row).join('')}</div>` : ''}
-    ${growCard()}
     ${themePicker()}
     ${growOn() ? '' : '<div class="foot"><button type="button" style="color:var(--brand);font-weight:600" onclick="growToggle(true)">Show daily channel tips</button></div>'}
     <div class="foot" id="syncline">${esc(syncLine())}<br>Shared to-dos show on Shane’s list too, and he can tick them off. ${S.todos.length ? '' : ''}Sarah’s To-do ${APP_VERSION}</div><div class="foot" id="notifyline" style="margin-top:-6px">${notifyLine()}</div>`;
