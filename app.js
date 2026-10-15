@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.9.1';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -457,6 +457,11 @@ async function sharedSync() {
     });
     // queued deletes the list no longer holds: done
     Object.keys(st.pend).forEach(id => { if (st.pend[id].deleted && !d.items.some(s => s.id === id)) { delete st.pend[id]; delete st.snap[id]; } });
+    // Self-heal: an item both phones had agreed on that the relay no longer holds (no tombstone either) was lost when
+    // two phones wrote at nearly the same moment (the store is eventually consistent). Queue it again.
+    const have = new Set(d.items.map(s => s.id)); let lost = 0;
+    SH.items().forEach(t => { if (st.snap[t.id] && !st.pend[t.id] && !have.has(t.id)) { delete st.snap[t.id]; lost++; } });
+    if (lost) { sharedNote(); sharedSoon(4000); }
     sharedLastOk = Date.now(); sharedErr = '';
     await SH.persist(changed);
   } catch (e) { sharedErr = 'offline'; }
