@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -942,14 +942,27 @@ function carCard() {
   const c = S.car;
   const name = 'My car — Haval H6' + (c && c.plate ? ' (' + c.plate + ')' : ' (PNU312)');
   if (!c) return `<div class="card carcard" id="carcard"><div class="cch">${I('car')}<b>${esc(name)}</b></div><p class="muted" style="margin:6px 0 0">Waiting for dates from Shane’s app. They’ll show here once his app has been opened with your car’s dates in it.</p></div>`;
-  const rows = CAR_PARTS.map(([k, long, short]) => { const v = c[k]; if (!v) return `<div class="crow"><div class="tx"><div class="t">${long}</div><div class="s">Not set yet</div></div></div>`;
+  const rows = CAR_PARTS.map(([k, long, short]) => { const v = c[k]; if (k === 'wof' && v && wofSt(c).st !== 'due') return wofRow(c);
+    if (!v) return `<div class="crow"><div class="tx"><div class="t">${long}</div><div class="s">Not set yet</div></div></div>`;
     const d = daysLeft(v); return `<div class="crow ${d < 0 ? 'over' : d < 14 ? 'soon' : ''}"><div class="tx"><div class="t">${long}</div><div class="s">Due ${esc(fmtLong(v))}${k === 'svc' && c.svcKm ? ' or at ' + Number(c.svcKm).toLocaleString('en-NZ') + ' km' : ''}</div></div>${chipFor(d)}<button type="button" class="iconbtn sm" aria-label="Add ${short} to my phone’s calendar" onclick="carIcs('${k}')">${I('cal')}</button></div>`; }).join('');
   return `<div class="card carcard" id="carcard"><div class="cch">${I('car')}<b>${esc(name)}</b></div>${rows}
     <p class="muted" style="margin:8px 0 0;font-size:0.8125rem">Shane keeps these up to date in his app.${c.odo ? ' Odometer about ' + Number(c.odo).toLocaleString('en-NZ') + ' km.' : ''}</p></div>`;
 }
+/* 1.11.0: WOF status from Shane's app (read-only here): due, in progress (recheck date, fixes) or passed */
+function wofSt(c) { const w = c && c.wofSt; return w && ['due', 'doing', 'done'].includes(w.st) ? w : { st: 'due' }; }
+function wofRow(c) {
+  const w = wofSt(c);
+  if (w.st === 'done') return `<div class="crow wofdone" id="wofrow"><div class="tx"><div class="t">Warrant of fitness (WOF)</div><div class="s">WOF passed${w.passed ? ' ' + esc(fmtW(w.passed)) : ''} · next due ${esc(fmtLong(c.wof))}</div></div><span class="cchip ok">Passed ✓</span><button type="button" class="iconbtn sm" aria-label="Add WOF to my phone’s calendar" onclick="carIcs('wof')">${I('cal')}</button></div>`;
+  const rd = w.recheck ? daysLeft(w.recheck) : null, F = Array.isArray(w.fixes) ? w.fixes : [], dn = F.filter(f => f.d).length;
+  const when = rd == null ? 'Shane is sorting it' : `recheck by ${esc(fmtW(w.recheck))} (${rd > 1 ? rd + ' days' : rd === 1 ? 'tomorrow' : rd === 0 ? 'today' : -rd + ' day' + (rd === -1 ? '' : 's') + ' overdue'})`;
+  const fx = F.length ? `<div class="woffix"><div class="wofbar"><i style="width:${Math.round(dn / F.length * 100)}%"></i></div><div class="s" style="margin:4px 0 2px">Fixes needed · ${dn} of ${F.length} done</div>${F.map(f => `<div class="wofck ${f.d ? 'on' : ''}"><span>${f.d ? '✓' : ''}</span>${esc(f.t)}</div>`).join('')}</div>` : '';
+  return `<div class="crow wofdoing${rd != null && rd < 0 ? ' over' : ''}" id="wofrow" style="flex-wrap:wrap"><div class="tx"><div class="t">Warrant of fitness (WOF)</div><div class="s">In progress · ${when}</div></div><span class="cchip prog">In progress</span>${fx}</div>`;
+}
 function carSoonLine() {
   const c = S.car; if (!c) return '';
-  const due = CAR_PARTS.map(([k, , short]) => c[k] ? { short, d: daysLeft(c[k]) } : null).filter(x => x && x.d < 14).sort((a, b) => a.d - b.d)[0];
+  const ws = wofSt(c);
+  if (ws.st === 'doing') { const rd = ws.recheck ? daysLeft(ws.recheck) : null; return `<button class="schoolline carline prog${rd != null && rd < 0 ? ' over' : ''}" onclick="go('#appts')">${I('car')}<span>Car WOF in progress${ws.recheck ? ' · recheck by ' + esc(fmtW(ws.recheck)) + (rd >= 0 ? ` (${rd === 0 ? 'today' : rd === 1 ? 'tomorrow' : rd + ' days'})` : ' (overdue)') : ''}.</span>${I('right')}</button>`; }
+  const due = CAR_PARTS.filter(([k]) => !(k === 'wof' && ws.st === 'done')).map(([k, , short]) => c[k] ? { short, d: daysLeft(c[k]) } : null).filter(x => x && x.d < 14).sort((a, b) => a.d - b.d)[0];
   if (!due) return '';
   const w = due.d < 0 ? 'is overdue' : due.d === 0 ? 'is due today' : due.d === 1 ? 'is due tomorrow' : 'is due in ' + due.d + ' days';
   return `<button class="schoolline carline${due.d < 0 ? ' over' : ''}" onclick="go('#appts')">${I('car')}<span>Car ${due.short} ${w}.</span>${I('right')}</button>`;
