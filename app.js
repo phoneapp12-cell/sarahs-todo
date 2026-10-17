@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.9.1';
+const APP_VERSION = '1.10.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -709,15 +709,30 @@ const VAPID_PUBLIC = 'BEsNn0TcOiNQqSE7AbDFgYGL_v45EEm-mma2_6DtecoG5c7ZvwZ7lKpAXO
 const NOTE_KEY = 'sarahsTodo.notify';
 const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && (!isIOS() || isStandalone());
 function noteSt() { try { return JSON.parse(localStorage.getItem(NOTE_KEY) || '{}') || {}; } catch (e) { return {}; } }
+(() => { try { const o = JSON.parse(localStorage.getItem('sarahsTodo.notify') || '{}') || {}; if (!o.on && o.hide && !o.shop110) { delete o.hide; o.shop110 = 1; localStorage.setItem('sarahsTodo.notify', JSON.stringify(o)); } } catch (e) { } })();
 function noteSave(o) { try { localStorage.setItem(NOTE_KEY, JSON.stringify(o)); } catch (e) { } }
 const notifyIsOn = () => pushOk() && Notification.permission === 'granted' && !!noteSt().on;
 let noteBusy = false;
 function notifyCard() {
   if (!pushOk() || notifyIsOn() || Notification.permission === 'denied' || noteSt().hide) return '';
   return `<div class="card installcard" id="notifycard"><div><div class="t" style="font-weight:700">Turn on notifications?</div>
-    <div class="muted">Let Sarah’s To-do send you the odd little note during the day.</div></div>
+    <div class="muted">Get a notification when Shane adds to the shopping list (plus the odd little note during the day).</div></div>
     <div style="display:flex;flex-direction:column;gap:6px;flex:none"><button class="btn primary small" id="notifyon" onclick="notifyOn()">Turn on</button><button class="btn small" onclick="notifyLater()">Not now</button></div></div>`;
 }
+/* 1.10.0: when Shane adds to the shared Shopping list, the relay sends one notification per batch
+   ('Shane added to shopping: Milk, Bread'), using the notifications above. In the app, a 'From Shane' card shows them too. */
+const SEEN_SHANE = 'sarahsTodo.shopSeen';
+function shopSeen() { try { return JSON.parse(localStorage.getItem(SEEN_SHANE) || '[]') || []; } catch (e) { return []; } }
+function shaneShopNew() { const seen = new Set(shopSeen()), since = Date.now() - 864e5; return S.todos.filter(t => t && t.by === 'shane' && isShop(t) && !t.done && +t.created >= since && !seen.has(t.id)).sort((a, b) => b.created - a.created); }
+function shaneShopCard() {
+  const L = shaneShopNew(); if (!L.length) return '';
+  const nm = t => { const b = t.brand, br = b && !b.any && !b.other ? String(b.brand || '').trim() : ''; return br && !t.title.toLowerCase().includes(br.toLowerCase()) ? `${t.title} (${br})` : t.title; };
+  const names = L.slice(0, 6).map(nm).join(', ') + (L.length > 6 ? ` and ${L.length - 6} more` : '');
+  return `<div class="card installcard" id="shaneshop"><div style="flex:1;min-width:0"><div class="t" style="font-weight:700">🛒 Shane added to shopping</div><div class="muted">${esc(names)}</div></div>
+    <div style="display:flex;flex-direction:column;gap:6px;flex:none"><button class="btn primary small" onclick="shaneShopSee()">See list</button><button class="btn small" onclick="shaneShopOk()">Got it</button></div></div>`;
+}
+function shaneShopOk() { const ids = shopSeen().concat(shaneShopNew().map(t => t.id)).slice(-300); try { localStorage.setItem(SEEN_SHANE, JSON.stringify(ids)); } catch (e) { } render(); }
+function shaneShopSee() { shaneShopOk(); try { setTodoFilter('Shopping'); } catch (e) { } }
 function notifyLater() { const o = noteSt(); o.hide = true; noteSave(o); render(); }
 function notifyLine() {
   if (!pushOk()) return '';
@@ -1458,7 +1473,7 @@ function render() {
   if (!S) return;
   let page = '';
   try { page = curPage() === 'school' ? School() : curPage() === 'appts' ? Appts() : Todo(); } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
-  $('#view').innerHTML = greetCard() + remindBanner() + (curPage() === 'todo' ? schoolLineCard() + apptSoonLine() + carSoonLine() : '') + pageTabs() + installCard() + notifyCard() + page;
+  $('#view').innerHTML = greetCard() + remindBanner() + (curPage() === 'todo' ? schoolLineCard() + apptSoonLine() + carSoonLine() : '') + pageTabs() + installCard() + notifyCard() + (curPage() === 'todo' ? shaneShopCard() : '') + page;
 }
 window.addEventListener('hashchange', () => { if (!sheetOpen) { render(); window.scrollTo(0, 0); } });
 let schoolLineLast = '';
