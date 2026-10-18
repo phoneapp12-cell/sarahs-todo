@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -297,7 +297,7 @@ function Todo() {
     ${done.length ? `<div class="sec">Done <button onclick="clearDone()">Clear done</button></div><div class="list" id="donelist">${done.map(row).join('')}</div>` : ''}
     ${themePicker()}
     ${growOn() ? '' : '<div class="foot"><button type="button" style="color:var(--brand);font-weight:600" onclick="growToggle(true)">Show daily channel tips</button></div>'}
-    <div class="foot" id="syncline">${esc(syncLine())}<br>Shared to-dos show on Shane’s list too, and he can tick them off. ${S.todos.length ? '' : ''}Sarah’s To-do ${APP_VERSION}</div><div class="foot" id="notifyline" style="margin-top:-6px">${notifyLine()}</div>`;
+    <div class="foot" id="syncline">${esc(syncLine())}<br>Shared to-dos show on Shane’s list too, and he can tick them off. When you tick a shared one off, Shane gets a little note (just the title). ${S.todos.length ? '' : ''}Sarah’s To-do ${APP_VERSION}</div><div class="foot" id="notifyline" style="margin-top:-6px">${notifyLine()}</div>`;
 }
 function setTodoFilter(l) { todoFilter = l; render(); }
 async function quickAdd(e) {
@@ -391,7 +391,7 @@ const SH = {
     sharedApplying = true;
     try { await save(); } finally { sharedApplying = false; }
     if (sheetOpen) return;
-    if (changed) render(); else { const el = document.getElementById('syncline'); if (el) el.innerHTML = esc(syncLine()) + '<br>Shared to-dos show on Shane’s list too, and he can tick them off. Sarah’s To-do ' + APP_VERSION; }
+    if (changed) render(); else { const el = document.getElementById('syncline'); if (el) el.innerHTML = esc(syncLine()) + '<br>Shared to-dos show on Shane’s list too, and he can tick them off. When you tick a shared one off, Shane gets a little note (just the title). Sarah’s To-do ' + APP_VERSION; }
   }
 };
 /* ---- Shared to-do sync (Sarah's To-do <-> My App) ----
@@ -437,7 +437,7 @@ async function sharedSync() {
     const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 15000);
     let d;
     try {
-      const r = await fetch(SHARED_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SHARED_KEY, items: sent }), signal: ctl.signal });
+      const r = await fetch(SHARED_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SHARED_KEY, items: sent, from: 'sarah' }), signal: ctl.signal });
       if (!r.ok) throw new Error('http ' + r.status);
       d = await r.json();
     } finally { clearTimeout(to); }
