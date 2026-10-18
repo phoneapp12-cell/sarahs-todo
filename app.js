@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.12.1';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -332,6 +332,7 @@ function todoForm(id) {
   openSheet(id ? 'Edit to-do' : 'Add a to-do',
     field('To-do', inp('title', t.title, 'placeholder="e.g. Pick up the dry cleaning" required maxlength="120"')) +
     `<div class="two">${field('List', sel('list', S.lists.map(l => [l, l]), t.list))}${field('Priority', sel('priority', [['high', 'High'], ['normal', 'Normal'], ['low', 'Low']], todoPriority(t)))}</div>` +
+    (id && S.lists.length > 1 ? `<div class="btns" style="margin:-2px 0 8px"><button type="button" class="btn small" id="smove" onclick="moveSheet('${id}')">⋯ Move to another list</button></div>` : '') +
     field('Due date', inp('due', t.due, 'type="date"'), 'Optional') +
     field('Notes', area('notes', t.notes)) +
     (id && (isShop(t) || t.brand) ? `<div class="brandbox" id="brandbox"><div><b>Brand</b><small>${t.brand ? esc(brandLine(t.brand)) + (t.brand.at ? ' · looked up ' + esc(fmt(t.brand.at)) : '') : 'Not chosen yet'}</small></div>
@@ -1506,3 +1507,9 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => notifyRefresh()).catch(() => { });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') notifyRefresh(); });
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { }
+
+// 1.12.0: move a to-do to another list in one tap (a shared one moves on Shane's phone too; it isn't a tick)
+async function moveSheet(id) { const t = S.todos.find(x => x.id === id); if (!t) return; if (sheetOpen) await closeSheet();
+  openSheet('Move to…', `<p class="muted" style="margin:-4px 2px 10px">“${esc(t.title)}” is on <b>${esc(t.list)}</b>.</p><div class="list">${S.lists.filter(l => l !== t.list).map(l => `<button type="button" class="row" onclick="moveTo('${id}',${jsArg(l)})"><div class="tx"><div class="t">${esc(l)}</div></div></button>`).join('')}</div>`); }
+async function moveTo(id, l) { const t = S.todos.find(x => x.id === id); if (!t || !S.lists.includes(l)) return; const s = snap(); t.list = l; await save(); await closeSheet(); render(); try { sharedSoon(500); } catch (e) { }
+  toast(`Moved to ${l}.` + (t.private ? '' : ' Shane’s list is updated too.'), 'Undo', undoTo(s)); }
