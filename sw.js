@@ -1,5 +1,5 @@
 /* Sarah's To-do service worker: keeps the app working offline, and shows notifications if they're turned on. No tracking. (The shared list itself goes straight to the relay, not through here.) */
-const VERSION = '1.12.1';
+const VERSION = '1.13.0';
 const CACHE = 'sarahs-todo-' + VERSION;
 const SHELL = ['./', 'index.html', 'app.js', 'core.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
 self.addEventListener('install', e => {
@@ -12,7 +12,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
-  e.respondWith(fetch(req).then(res => {
+  e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => { // 1.13.0: always check for a newer copy
     if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
     return res;
   }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || (req.mode === 'navigate' ? caches.match('index.html') : undefined))));
@@ -34,12 +34,14 @@ self.addEventListener('notificationclick', e => {
 });
 // The phone occasionally renews its push address: pass the new one on quietly
 const SUN_BASE = 'https://due-dates-calendar-relay.phoneapp12.workers.dev/sunshine/';
-const SHARED_KEY = 'sArgfZGJrHxJN9I319FJeFLhFshrHsRU2xDFnnLL';
+// 1.13.0: this phone's own shared-list key (saved by the app); the old key only until it's linked (or 5 Nov 2026)
+const LEGACY_KEY = 'sArgfZGJrHxJN9I319FJeFLhFshrHsRU2xDFnnLL';
+async function stKey() { try { const c = await caches.open('st-pair-key'); const r = await c.match('key'); if (r) { const t = await r.text(); if (/^st_[A-Za-z0-9_-]{40,}$/.test(t)) return t; } } catch (e) { } return LEGACY_KEY; }
 const VAPID_PUBLIC = 'BEsNn0TcOiNQqSE7AbDFgYGL_v45EEm-mma2_6DtecoG5c7ZvwZ7lKpAXOQry7cqfvWM0JTjtPPdK93arc0VXMU';
 self.addEventListener('pushsubscriptionchange', e => {
   e.waitUntil((async () => {
     const key = Uint8Array.from(atob(VAPID_PUBLIC.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - VAPID_PUBLIC.length % 4) % 4)), c => c.charCodeAt(0));
     const sub = e.newSubscription || await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
-    await fetch(SUN_BASE + 'subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SHARED_KEY, subscription: sub.toJSON(), quiet: true, previous: e.oldSubscription ? e.oldSubscription.endpoint : undefined }) });
+    await fetch(SUN_BASE + 'subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: await stKey(), subscription: sub.toJSON(), quiet: true, previous: e.oldSubscription ? e.oldSubscription.endpoint : undefined }) });
   })().catch(() => { }));
 });

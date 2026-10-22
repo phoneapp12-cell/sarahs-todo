@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, fmt, fmtY, fmtW, fmtLong, status } = MH;
-const APP_VERSION = '1.12.1';
+const APP_VERSION = '1.13.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -212,7 +212,7 @@ async function brandFetch(q) {
   if (brandCache[k] && Date.now() - brandCache[k].at < 6 * 3600e3) return brandCache[k].d;
   const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 12000);
   try {
-    const r = await fetch(BRANDS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SHARED_KEY, q: k }), signal: ctl.signal });
+    const r = await fetch(BRANDS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: sharedKey(), q: k }), signal: ctl.signal });
     if (!r.ok) throw new Error('http ' + r.status);
     const d = await r.json();
     if (!d || !Array.isArray(d.options)) throw new Error('bad');
@@ -400,7 +400,14 @@ const SH = {
    (add, tick, edit, delete, undo) are spotted by comparing with that note and queued, so they work offline
    and are sent when there's signal. Each item merges on its own time stamp; nothing is duplicated. */
 const SHARED_URL = 'https://due-dates-calendar-relay.phoneapp12.workers.dev/shared-todo';
-const SHARED_KEY = 'sArgfZGJrHxJN9I319FJeFLhFshrHsRU2xDFnnLL'; // only opens this one shared list
+// 1.13.0: each phone has its own shared-list key, kept only on this phone (localStorage 'stKey' and a copy for the
+// notification worker). The old shared key below is accepted by the relay only until this phone links with Shane's
+// My App, or until 5 Nov 2026, whichever comes first. After that it does nothing.
+const LEGACY_KEY = 'sArgfZGJrHxJN9I319FJeFLhFshrHsRU2xDFnnLL';
+const PAIR_CUTOFF = Date.parse('2026-11-05T23:59:59+13:00');
+function sharedKey() { try { return localStorage.getItem('stKey') || LEGACY_KEY; } catch (e) { return LEGACY_KEY; } }
+const stPaired = () => { try { return !!localStorage.getItem('stKey'); } catch (e) { return false; } };
+async function stKeyToWorker(k) { try { const c = await caches.open('st-pair-key'); await c.put('key', new Response(k)); } catch (e) { } }
 const SHARED_FIELDS = ['title', 'list', 'due', 'notes', 'priority', 'done'];
 const sharedHash = t => JSON.stringify(SHARED_FIELDS.map(k => k === 'done' ? !!t[k] : String(t[k] == null ? '' : t[k])).concat(t.brand ? [brandKey(t.brand)] : []).concat(t.appt ? [apptKey(t.appt)] : []).concat(t.claim ? [claimKey(claimNorm(t.claim))] : []));
 const apptKey = a => JSON.stringify([a.type || '', a.time || '', a.place || '']);
@@ -438,7 +445,7 @@ async function sharedSync() {
     const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 15000);
     let d;
     try {
-      const r = await fetch(SHARED_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SHARED_KEY, items: sent, from: 'sarah' }), signal: ctl.signal });
+      const r = await fetch(SHARED_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: sharedKey(), items: sent, from: 'sarah' }), signal: ctl.signal });
       if (!r.ok) throw new Error('http ' + r.status);
       d = await r.json();
     } finally { clearTimeout(to); }
@@ -743,7 +750,7 @@ function notifyLine() {
 }
 const keyBytes = k => Uint8Array.from(atob(k.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - k.length % 4) % 4)), c => c.charCodeAt(0));
 async function sunPost(path, body) {
-  const r = await fetch(SUN_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ key: SHARED_KEY }, body)) });
+  const r = await fetch(SUN_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ key: sharedKey() }, body)) });
   if (!r.ok) throw new Error('http ' + r.status); return r.json();
 }
 async function pushSub() {
@@ -930,7 +937,7 @@ async function carRefresh() {
   if (carBusy || navigator.onLine === false) return;
   carBusy = true;
   try {
-    const r = await fetch(CAR_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SHARED_KEY }) });
+    const r = await fetch(CAR_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: sharedKey() }) });
     if (!r.ok) throw new Error('http ' + r.status);
     const d = await r.json(); carErr = false;
     const had = JSON.stringify(S.car || null), now = d && d.car && d.car.plate ? d.car : null;
@@ -1099,7 +1106,7 @@ async function clPhCompress(file) {
 }
 async function clPhRemote(id) {
   try {
-    const r = await fetch(CL_PHOTO_URL(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SHARED_KEY, id }) });
+    const r = await fetch(CL_PHOTO_URL(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: sharedKey(), id }) });
     if (!r.ok) return null; const d = await r.json();
     if (d && typeof d.data === 'string' && d.data.startsWith('data:image/')) { await clPhPut(id, d.data).catch(() => { }); return d.data; }
   } catch (e) { }
@@ -1107,7 +1114,7 @@ async function clPhRemote(id) {
 }
 async function clPhUpload(id) {
   const data = await clPhGet(id); if (!data || data.length > CL_PHOTO_MAX) return false;
-  try { const r = await fetch(CL_PHOTO_URL(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SHARED_KEY, id, data }) }); return r.ok; } catch (e) { return false; }
+  try { const r = await fetch(CL_PHOTO_URL(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: sharedKey(), id, data }) }); return r.ok; } catch (e) { return false; }
 }
 async function clPhLoad(p) { let d = await clPhGet(p.id); if (!d && p.up) d = await clPhRemote(p.id); return d || null; }
 // Sends any photos not yet on the relay (shared claims only). Returns true if any changed.
@@ -1487,7 +1494,7 @@ function render() {
   if (!S) return;
   let page = '';
   try { page = curPage() === 'school' ? School() : curPage() === 'appts' ? Appts() : Todo(); } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
-  $('#view').innerHTML = greetCard() + remindBanner() + (curPage() === 'todo' ? schoolLineCard() + apptSoonLine() + carSoonLine() : '') + pageTabs() + installCard() + notifyCard() + (curPage() === 'todo' ? shaneShopCard() : '') + page;
+  $('#view').innerHTML = pairCard() + greetCard() + remindBanner() + (curPage() === 'todo' ? schoolLineCard() + apptSoonLine() + carSoonLine() : '') + pageTabs() + installCard() + notifyCard() + (curPage() === 'todo' ? shaneShopCard() : '') + page;
 }
 window.addEventListener('hashchange', () => { if (!sheetOpen) { render(); window.scrollTo(0, 0); } });
 let schoolLineLast = '';
@@ -1497,6 +1504,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('offline', () => { sharedErr = 'offline'; if (!sheetOpen) render(); });
 applyTheme(curTheme());
 load();
+pairFromLink();
 render();
 mxFinish();
 sharedStart();
@@ -1513,3 +1521,36 @@ async function moveSheet(id) { const t = S.todos.find(x => x.id === id); if (!t)
   openSheet('Move to…', `<p class="muted" style="margin:-4px 2px 10px">“${esc(t.title)}” is on <b>${esc(t.list)}</b>.</p><div class="list">${S.lists.filter(l => l !== t.list).map(l => `<button type="button" class="row" onclick="moveTo('${id}',${jsArg(l)})"><div class="tx"><div class="t">${esc(l)}</div></div></button>`).join('')}</div>`); }
 async function moveTo(id, l) { const t = S.todos.find(x => x.id === id); if (!t || !S.lists.includes(l)) return; const s = snap(); t.list = l; await save(); await closeSheet(); render(); try { sharedSoon(500); } catch (e) { }
   toast(`Moved to ${l}.` + (t.private ? '' : ' Shane’s list is updated too.'), 'Undo', undoTo(s)); }
+
+/* 1.13.0: link with Shane's My App once. Shane makes a link (or code) in My App › Settings › Sarah's To-do; it works
+   once, within 24 hours. Opening the link links this phone; or tap "Enter code" and type it. */
+var pairBusy = false;
+async function pairRedeem(code) {
+  const r = await fetch(SHARED_URL.replace(/\/shared-todo$/, '/pair/redeem'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+  let j = null; try { j = await r.json(); } catch (e) { }
+  if (r.ok && j && typeof j.key === 'string' && /^st_[A-Za-z0-9_-]{40,}$/.test(j.key)) { localStorage.setItem('stKey', j.key); await stKeyToWorker(j.key); return ''; }
+  if (r.status === 410) return 'That code has already been used or has run out. Ask Shane for a new one.';
+  if (r.status === 429) return 'Too many tries. Wait an hour and try again.';
+  return 'That code didn’t match. Check it with Shane and try again.';
+}
+async function pairDone() { render(); toast('Linked with Shane’s My App. Your shared list carries on as before.'); try { sharedSync && sharedSync(); } catch (e) { } try { notifyRefresh && notifyRefresh(); } catch (e) { } }
+async function pairFromLink() {
+  const m = /^#pair=([A-Za-z0-9-]{10,12})$/.exec(location.hash || ''); if (!m) { if (stPaired()) stKeyToWorker(sharedKey()); return; }
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+  if (pairBusy) return; pairBusy = true;
+  try { const err = await pairRedeem(m[1]); if (err) toast(err); else await pairDone(); } catch (e) { toast('No signal just now. Open Shane’s link again when you’re back online.'); }
+  finally { pairBusy = false; }
+}
+function pairCard() {
+  if (stPaired()) return '';
+  const late = Date.now() > PAIR_CUTOFF;
+  return `<div class="card" style="border:2px solid var(--accent,#0F766E)"><b>Link with Shane’s My App</b>
+    <p class="muted" style="margin:6px 0 10px">${late ? 'Your shared list with Shane is paused until you link. Nothing is lost.' : 'One quick step so your shared list keeps working with Shane after 5 November.'} Open the link Shane sends you, or tap Enter code.</p>
+    <button type="button" class="btn primary" onclick="pairSheet()">Enter code</button></div>`;
+}
+function pairSheet() {
+  openSheet('Link with Shane', field('Code from Shane', inp('code', '', 'autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE-FGHJK"'), 'Shane makes it in My App. It works once, for 24 hours.'),
+    async v => { const c = String(v.code || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (c.length !== 10) return 'The code has 10 letters and numbers.';
+      try { const err = await pairRedeem(c); if (err) return err; } catch (e) { return 'No signal just now. Try again when you’re online.'; }
+      setTimeout(pairDone, 50); }, 'Link');
+}
