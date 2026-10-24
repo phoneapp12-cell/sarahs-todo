@@ -724,7 +724,7 @@ let noteBusy = false;
 function notifyCard() {
   if (!pushOk() || notifyIsOn() || Notification.permission === 'denied' || noteSt().hide) return '';
   return `<div class="card installcard" id="notifycard"><div><div class="t" style="font-weight:700">Turn on notifications?</div>
-    <div class="muted">Get a notification when Shane adds to the shopping list (plus the odd little note during the day).</div></div>
+    <div class="muted">Get a notification with the full details when Shane adds to your lists or appointments, and when your reminders are due (plus the odd little note during the day).</div></div>
     <div style="display:flex;flex-direction:column;gap:6px;flex:none"><button class="btn primary small" id="notifyon" onclick="notifyOn()">Turn on</button><button class="btn small" onclick="notifyLater()">Not now</button></div></div>`;
 }
 /* 1.10.0: when Shane adds to the shared Shopping list, the relay sends one notification per batch
@@ -764,7 +764,7 @@ async function notifyOn() {
     if (p !== 'granted') { toast(p === 'denied' ? 'Notifications are blocked. You can allow them in your phone settings.' : 'Notifications stay off.'); return; }
     const sub = await pushSub();
     await sunPost('subscribe', { subscription: sub.toJSON() });
-    noteSave({ on: true, at: Date.now() }); toast('Notifications are on.');
+    noteSave({ on: true, at: Date.now() }); toast('Notifications are on.'); remSig = ''; remSync();
   } catch (e) { toast(navigator.onLine === false ? 'You’re offline. Try again when you have signal.' : 'Sorry, notifications couldn’t be turned on. Try again later.'); }
   finally { noteBusy = false; render(); }
 }
@@ -1016,6 +1016,22 @@ function remindBanner() {
   return dueReminders().map(a => `<div class="callout remind" data-k="${esc(a.id)}">${I('bell')}<div style="flex:1"><b>Reminder: ${esc(a.title)}</b><br>${daysLeft(a.date) === 0 ? 'Today' : fmtW(a.date)}${a.time ? ' · ' + esc(fmtTm(a.time)) : ''}${a.place ? ' · ' + esc(a.place) : ''}</div><button class="btn small" onclick="dismissRem('${a.id}|${a.date}')">OK</button></div>`).join('');
 }
 async function dismissRem(k) { S.settings.seenRem = S.settings.seenRem.concat(k).slice(-200); await save(); render(); }
+/* 1.13.0: her upcoming reminders go to the relay so her phone gets them (full details) even when the app is closed.
+   Appointments with a reminder set, and shared to-dos due (8am on the day). Private items: no notes; private to-dos stay on the phone. */
+let remSig = '';
+function remPayload(now = Date.now()) {
+  const out = [], lim = now + 30 * 864e5;
+  for (const a of S.appts) { if (a.remind === '' || !a.date) continue; const st = apptStart(a).getTime(), at = st - (+a.remind) * 60000; if (at < now - 6e5 || at > lim) continue;
+    out.push({ id: 'ap|' + String(a.id).replace(/[^\w.-]/g, '') + '|' + a.date, at, url: './#appts', title: '\u{1F4C5} Reminder: ' + a.title, body: [fmtW(a.date), a.time ? fmtTm(a.time) : '', a.place, a.private ? '' : a.notes].filter(Boolean).join(' · ').slice(0, 300) }); }
+  for (const t of S.todos) { if (t.done || t.private || !t.due) continue; const [y, m, d] = t.due.split('-').map(Number), at = new Date(y, m - 1, d, 8, 0).getTime(); if (at < now - 6e5 || at > lim) continue;
+    out.push({ id: 'td|' + String(t.id).replace(/[^\w.-]/g, '') + '|' + t.due, at, url: './', title: '\u{1F4CB} Due today: ' + t.title, body: [t.list, t.priority === 'high' ? 'High priority' : '', t.notes].filter(Boolean).join(' · ').slice(0, 300) }); }
+  return out.sort((a, b) => a.at - b.at).slice(0, 60);
+}
+async function remSync() {
+  try { if (!notifyIsOn() || navigator.onLine === false) return; const r = remPayload(), sig = JSON.stringify(r); if (sig === remSig) return;
+    await sunPost('reminders', { reminders: r }); remSig = sig; } catch (e) { }
+}
+setInterval(remSync, 60000); setTimeout(remSync, 5000);
 setInterval(() => { try { const k = dueReminders().map(a => a.id).join(); if (k !== (window.__remK || '')) { window.__remK = k; if (!sheetOpen) render(); } } catch (e) { } }, 30000);
 function apptRow(a) {
   const d = daysLeft(a.date), [tn, ic] = APPT_TYPES[a.type];
