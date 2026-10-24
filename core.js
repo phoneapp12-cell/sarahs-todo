@@ -106,7 +106,46 @@
     return Math.round(parseFloat(t) * 100);
   }
 
+  const PET_CARE = {
+    flea: { name: 'Flea treatment', every: 1, unit: 'months' },
+    worm: { name: 'Worming', every: 3, unit: 'months' },
+    vacc: { name: 'Vaccinations', every: 1, unit: 'years' },
+    groom: { name: 'Grooming', every: 6, unit: 'weeks' },
+    check: { name: 'Vet check-up', every: 1, unit: 'years' },
+    reg: { name: 'Dog registration', every: 1, unit: 'years' }
+  };
+  function addInterval(s, n, unit) {
+    n = Math.max(1, Math.round(+n || 1));
+    return unit === 'weeks' ? addDays(s, 7 * n) : unit === 'years' ? addMonths(s, 12 * n) : addMonths(s, n);
+  }
+  function regDueAfter(done) { const d = dObj(done); return (d.getUTCFullYear() + (d.getUTCMonth() >= 4 ? 1 : 0)) + '-07-01'; }
+  function nextJuly1(now) { const T = todayISO(now), y = +T.slice(0, 4); return T <= y + '-07-01' ? y + '-07-01' : (y + 1) + '-07-01'; }
+  function careDue(it, now) {
+    if (!it) return '';
+    if (it.due && parseD(it.due) != null) return it.due;
+    if (it.kind === 'reg') return it.last ? regDueAfter(it.last) : nextJuly1(now);
+    if (!it.last || parseD(it.last) == null || it.unit === 'none' || !(+it.every > 0)) return '';
+    return addInterval(it.last, it.every, it.unit);
+  }
+  function careNextAfter(it, date) {
+    if (it.kind === 'reg') return regDueAfter(date);
+    return it.unit === 'none' || !(+it.every > 0) ? '' : addInterval(date, it.every, it.unit);
+  }
+  function careEvery(it) {
+    if (it.kind === 'reg') return 'Every 1 July';
+    if (it.unit === 'none' || !(+it.every > 0)) return 'Doesn’t repeat';
+    const n = +it.every, u = it.unit === 'weeks' ? 'week' : it.unit === 'years' ? 'year' : 'month';
+    return n === 1 ? (u === 'week' ? 'Every week' : u === 'month' ? 'Monthly' : 'Yearly') : `Every ${n} ${u}s`;
+  }
+  function petDueItems(pets, now) {
+    const out = [];
+    (pets || []).forEach(p => (p.care || []).forEach(it => {
+      const date = careDue(it, now);
+      if (date) out.push({ kind: 'pet', part: 'care', id: p.id + ':' + it.id, pet: p, care: it, title: p.name + ': ' + it.name, date, days: daysLeft(date, now) });
+    }));
+    return out.sort((a, b) => a.days - b.days || a.title.localeCompare(b.title));
+  }
   const status = d => d < 0 ? 'over' : d <= 30 ? 'soon' : 'fine';
 
-  g.MH = { DAY, todayT, parseD, isoT, todayISO, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, centsMoney, parseCents, status };
+  g.MH = { DAY, todayT, parseD, isoT, todayISO, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, centsMoney, parseCents, PET_CARE, addInterval, regDueAfter, careDue, careNextAfter, careEvery, petDueItems, status };
 })(typeof self !== 'undefined' ? self : this);

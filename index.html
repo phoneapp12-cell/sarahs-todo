@@ -357,7 +357,33 @@ html[data-theme="dark"] .ic.note{background:#1E3A5F;color:#BFDBFE}
 .ecrow{align-items:flex-start}.ecrow .ecpdf{font-size:0.75rem;word-break:break-all}.ecbtns{display:flex;flex-direction:column;gap:6px;flex:none}
 .pdfpv{flex:1;min-height:0;width:100%;overflow:auto;display:flex;justify-content:center;align-items:flex-start}.pdfpv canvas{max-width:100%;height:auto;background:#fff;border-radius:6px}
 .mxcard .cch{display:flex;align-items:center;gap:8px}.mxsug{align-items:flex-start}.mxsubj{font-size:0.75rem;opacity:.8}.mxpriv{font-size:0.75rem;margin:8px 0 0}
-.sugtag{display:inline-block;background:var(--brand);color:#fff;font-size:.7rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:6px;padding:1px 6px;vertical-align:2px}.sugbtn{color:var(--brand);font-weight:700;cursor:pointer}.sugbtn.off{color:var(--muted,#666)}</style>
+.sugtag{display:inline-block;background:var(--brand);color:#fff;font-size:.7rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:6px;padding:1px 6px;vertical-align:2px}.sugbtn{color:var(--brand);font-weight:700;cursor:pointer}.sugbtn.off{color:var(--muted,#666)}
+/* 1.14.0 Pets & Trello-style option */
+.petsub{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--soft);margin-top:8px;cursor:pointer;text-align:left;width:100%}
+.petsub:hover{background:var(--soft2)}
+.petav{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:1.25rem;background:var(--brand2);flex:none}
+.petsub .tx{flex:1;min-width:0}
+.petsub .t{font-weight:800;font-size:0.96875rem;color:var(--ink)}
+.petsub .s{font-size:0.8125rem;color:var(--ink2);margin-top:2px}
+.petmini{margin-top:6px;display:flex;flex-direction:column;gap:4px}
+.petmline{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:0.8125rem;padding:4px 8px;border-radius:9px;background:var(--card)}
+.petmline .n{font-weight:650;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.petdup-tag{display:inline-block;font-size:0.6875rem;font-weight:800;padding:2px 7px;border-radius:999px;background:var(--brand2);color:var(--brand);margin-left:6px;vertical-align:1px}
+.layoutbtn{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:7px 11px;background:var(--soft2);color:var(--ink);font-weight:750;font-size:0.8125rem;border:1px solid var(--line);margin-right:4px}
+.layoutbtn.on{background:var(--brand2);color:var(--brand);border-color:var(--brand)}
+.layoutbtn .i{width:16px;height:16px}
+html[data-layout="trello"] #app{max-width:100%}
+.tbboard{margin:4px calc(-16px - var(--sal)) 14px calc(-16px - var(--sal));padding:4px calc(16px + var(--sal)) 12px calc(16px + var(--sal));overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
+.tblists{display:flex;align-items:flex-start;gap:12px;width:max-content;min-width:100%}
+.tblist{width:min(308px,84vw);flex:0 0 min(308px,84vw);background:var(--soft2);border:1px solid var(--line);border-radius:16px;padding:10px;scroll-snap-align:start;box-shadow:0 2px 8px rgba(0,0,0,.05);display:flex;flex-direction:column;max-height:76vh}
+.tblist-h{display:flex;align-items:center;gap:8px;padding:2px 4px 8px;font-weight:800;font-size:0.95rem;color:var(--ink)}
+.tblist-h b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tblist-c{font-size:0.75rem;font-weight:800;padding:2px 8px;border-radius:999px;background:var(--card);color:var(--ink2)}
+.tblist-b{display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding:2px 1px;flex:1;min-height:0}
+.tblist-b .row,.tblist-b .card{margin:0;border-radius:12px;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.07);border:1px solid var(--line)}
+.tbadd{margin-top:8px;width:100%;text-align:left;padding:9px 10px;border-radius:10px;font-weight:750;font-size:0.84375rem;color:var(--brand);background:rgba(255,255,255,.55);display:flex;align-items:center;gap:6px}
+.tbadd:hover{background:var(--card)}
+.tbadd .i{width:16px;height:16px}</style>
 </head>
 <body>
 <div id="app">
@@ -366,7 +392,7 @@ html[data-theme="dark"] .ic.note{background:#1E3A5F;color:#BFDBFE}
 </div>
 <div id="sheet"></div>
 <div id="toast" role="status" aria-live="polite"><span id="toastmsg"></span><button id="toastbtn"></button></div>
-<script src="core.js?v=1.13.1"></script>
-<script src="app.js?v=1.13.1"></script>
+<script src="core.js?v=1.14.0"></script>
+<script src="app.js?v=1.14.0"></script>
 </body>
 </html>
