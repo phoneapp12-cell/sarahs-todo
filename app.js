@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, PET_CARE, careDue, careNextAfter, careEvery, petDueItems, status } = MH;
-const APP_VERSION = '1.15.0';
+const APP_VERSION = '1.15.1';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -386,10 +386,45 @@ function Todo() {
 function setTodoFilter(l) { todoFilter = l; render(); }
 function parseMultiShopItems(raw) {
   return String(raw || "")
-    .split(/[\r\n,;•]+/)
+    .split(/(?:[\r\n,;•]+|\s+\band\b\s+(?!(?:cheese|pepper|chips|sour|silken)\b))/i)
     .map(s => s.replace(/^\s*[-*•\d.)]+\s*/, "").trim())
     .filter(Boolean)
     .slice(0, 60);
+}
+let _inlineStaplesOpen = false;
+let _inlineShopSelected = new Set();
+function toggleInlineStaple(item, btn) {
+  if (_inlineShopSelected.has(item)) _inlineShopSelected.delete(item);
+  else _inlineShopSelected.add(item);
+  if (btn) btn.classList.toggle("on", _inlineShopSelected.has(item));
+  const bar = document.getElementById("inline-staple-bar");
+  const cnt = _inlineShopSelected.size;
+  if (bar) {
+    bar.style.display = cnt ? "flex" : "none";
+    const b = bar.querySelector(".btn.primary");
+    if (b) b.textContent = "+ Add Selected (" + cnt + ") to Shopping";
+  }
+}
+async function addInlineSelectedStaples() {
+  const arr = [..._inlineShopSelected];
+  if (!arr.length) return;
+  const shareEl = document.getElementById("shareshane");
+  const share = !shareEl || shareEl.checked;
+  _inlineShopSelected = new Set();
+  await addShopBatch(arr, share);
+}
+function updateQuickShopPreview(inp) {
+  const box = document.getElementById("qshop-preview");
+  if (!box || !inp) return;
+  const parts = parseMultiShopItems(inp.value);
+  if (parts.length <= 1) {
+    box.style.display = "none";
+    box.innerHTML = "";
+    return;
+  }
+  box.style.display = "flex";
+  box.innerHTML = "<span style=\"font-size:0.76rem;font-weight:800;color:var(--brand)\">Adding " + parts.length + " items:</span>" +
+    parts.map(p => "<span class=\"pill fine\" style=\"font-size:0.74rem;padding:2px 8px\">" + esc(p) + "</span>").join("");
 }
 async function addShopBatch(items, share = true) {
   const clean = (Array.isArray(items) ? items : parseMultiShopItems(items)).map(x => String(x || "").trim()).filter(Boolean);
@@ -565,10 +600,26 @@ function Shopping() {
         <button type="button" class="btn primary small" onclick="shopMultiSheet()">+ Add Multiple &amp; Staples</button>
       </div>
       <form class="addbar" style="margin:0 0 8px" onsubmit="quickAdd(event, 'Shopping')">
-        <input id="newtodo" placeholder="e.g. Milk, GF bread, eggs, butter…" autocomplete="off" enterkeyhint="done" maxlength="300" aria-label="Add shopping items">
+        <input id="newtodo" placeholder="e.g. Milk, GF bread, eggs, butter…" autocomplete="off" enterkeyhint="done" maxlength="300" aria-label="Add shopping items" oninput="updateQuickShopPreview(this)">
         <button aria-label="Add">${I("plus")}</button>
       </form>
-      <label class="sharechk" style="margin:0"><input type="checkbox" id="shareshane" checked> Share with Shane</label>
+      <div id="qshop-preview" style="display:none;flex-wrap:wrap;gap:5px;align-items:center;margin:0 0 8px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <label class="sharechk" style="margin:0"><input type="checkbox" id="shareshane" checked> Share with Shane</label>
+        <button type="button" class="linkbtn" style="font-size:0.82rem" onclick="_inlineStaplesOpen=!_inlineStaplesOpen;render()">${_inlineStaplesOpen ? "Hide quick staples ▴" : "✨ Quick-tap staples (select multiple) ▾"}</button>
+      </div>
+      ${_inlineStaplesOpen ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        <div class="muted" style="font-size:0.78rem;margin-bottom:6px">Tap as many items as you need, then tap <b>+ Add Selected</b>:</div>
+        ${SHOP_STAPLES.map(([cat, arr]) => `<div style="margin-bottom:8px"><div style="font-size:0.75rem;font-weight:800;color:var(--ink2);margin-bottom:4px">${esc(cat)}</div><div class="shop-chip-grid">${arr.map(item => {
+          const already = open.some(t => t.title.toLowerCase().trim() === item.toLowerCase());
+          const selOn = _inlineShopSelected.has(item);
+          return `<button type="button" class="shop-pick-chip${selOn ? " on" : ""}${already ? " already" : ""}" onclick="toggleInlineStaple(${jsArg(item)}, this)"><span>${esc(item)}</span>${already ? "<small>on list</small>" : ""}</button>`;
+        }).join("")}</div></div>`).join("")}
+        <div id="inline-staple-bar" style="display:${_inlineShopSelected.size ? "flex" : "none"};gap:8px;margin-top:10px">
+          <button type="button" class="btn primary" onclick="addInlineSelectedStaples()">+ Add Selected (${_inlineShopSelected.size}) to Shopping</button>
+          <button type="button" class="btn small" onclick="_inlineShopSelected.clear();render()">Clear</button>
+        </div>
+      </div>` : ""}
     </div>` +
     (open.length
       ? `<div class="sec" style="margin-top:8px">To get (${open.length}) <button onclick="shopMultiSheet()">+ Add more</button></div><div class="list" id="openlist">${open.map(row).join("")}</div>`
