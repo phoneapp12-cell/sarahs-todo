@@ -2,7 +2,7 @@
    Only the to-dos in this app are shared (through the small relay below). Nothing else is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, PET_CARE, careDue, careNextAfter, careEvery, petDueItems, status } = MH;
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.15.0';
 const STORE_KEY = 'sarahsTodo.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -55,7 +55,8 @@ const P = {
   idcard: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="8.5" cy="11" r="2"/><path d="M6 16a3 3 0 0 1 5 0M13 10h5M13 14h4"/>',
   call: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7A2 2 0 0 1 22 16.9z"/>',
   board: '<rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="9.5" y="4" width="5" height="12" rx="1.5"/><rect x="16" y="4" width="5" height="14" rx="1.5"/>',
-  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>'
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  cart: '<circle cx="9" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/><path d="M3 4h2l2.2 10.5a2 2 0 0 0 2 1.5h7.8a2 2 0 0 0 2-1.6L21 7H6.2"/>'
 };
 
 const I = (n, a = '') => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" ${a}>${P[n] || ''}</svg>`;
@@ -357,7 +358,7 @@ function Todo() {
       const headExtra = !isFixedList(l) ? `<button type="button" class="linkbtn" style="font-size:0.75rem" onclick="listForm(${jsArg(l)})">Rename</button>` : '';
       return tbCol((l === 'Shopping' ? '🛒 ' : l === 'Home' ? '🏠 ' : '📋 ') + l, items.length,
         (items.length ? items.map(row).join('') : `<div class="card empty" style="padding:14px"><div class="s">Nothing on ${esc(l)} yet.</div></div>`),
-        `<button type="button" class="tbadd" onclick="todoForm(null,${jsArg(l)})">${I('plus')} Add to ${esc(l)}</button>`, headExtra);
+        (l === "Shopping" ? `<div style="display:flex;gap:6px;margin-top:8px"><button type="button" class="tbadd" style="margin:0;flex:1" onclick="todoForm(null,'Shopping')">${I("plus")} Add 1 item</button><button type="button" class="tbadd" style="margin:0;flex:1;background:var(--brand);color:#fff" onclick="shopMultiSheet()">${I("plus")} Add multiple</button></div>` : `<button type="button" class="tbadd" onclick="todoForm(null,${jsArg(l)})">${I("plus")} Add to ${esc(l)}</button>`), headExtra);
     });
     const vidsAll = [...S.vids.filter(v => !v.done), ...S.vids.filter(v => v.done)];
     listCols.push(tbCol('🎬 Video ideas', S.vids.filter(v => !v.done).length,
@@ -375,7 +376,7 @@ function Todo() {
   return top +
     `${growCard()}${vidCard()}<div class="chips">${['All', ...S.lists].map(l => `<button class="chip ${l === todoFilter ? 'on' : ''}" onclick="setTodoFilter(${jsArg(l)})">${esc(l)}</button>`).join('')}
       <button class="chip plus" onclick="listForm()">+ New list</button></div>
-    ${todoFilter === 'Shopping' ? `<div class="muted" id="shopnote" style="margin:-2px 4px 10px;font-size:0.84375rem">These also go on Shane’s shopping list.</div>` : ''}
+    ${todoFilter === "Shopping" ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-2px 4px 10px"><span class="muted" id="shopnote" style="font-size:0.84375rem">These also go on Shane’s shopping list. Separate multiple items with commas!</span><button type="button" class="btn primary small" onclick="shopMultiSheet()">+ Add multiple</button></div>` : shopHomeSummaryCard()}
     ${todoFilter !== 'All' && !isFixedList(todoFilter) ? `<div style="display:flex;gap:18px;margin:-2px 4px 10px;font-size:0.875rem;font-weight:600"><button style="color:var(--brand);padding:4px 0" onclick="listForm(${jsArg(todoFilter)})">Rename list</button><button style="color:var(--red);padding:4px 0" onclick="deleteList(${jsArg(todoFilter)})">Delete list</button></div>` : ''}
     <form class="addbar" onsubmit="quickAdd(event)"><input id="newtodo" placeholder="Add a to-do${todoFilter !== 'All' ? ' to ' + esc(todoFilter) : ''}…" autocomplete="off" enterkeyhint="done" maxlength="120" aria-label="New to-do"><button aria-label="Add">${I('plus')}</button></form>
     <label class="sharechk"><input type="checkbox" id="shareshane" checked> Share with Shane</label>
@@ -383,15 +384,204 @@ function Todo() {
     ${done.length ? `<div class="sec">Done <button onclick="clearDone()">Clear done</button></div><div class="list" id="donelist">${done.map(row).join('')}</div>` : ''}` + foot;
 }
 function setTodoFilter(l) { todoFilter = l; render(); }
-async function quickAdd(e) {
+function parseMultiShopItems(raw) {
+  return String(raw || "")
+    .split(/[\r\n,;•]+/)
+    .map(s => s.replace(/^\s*[-*•\d.)]+\s*/, "").trim())
+    .filter(Boolean)
+    .slice(0, 60);
+}
+async function addShopBatch(items, share = true) {
+  const clean = (Array.isArray(items) ? items : parseMultiShopItems(items)).map(x => String(x || "").trim()).filter(Boolean);
+  if (!clean.length) return [];
+  if (!S.lists.includes("Shopping")) S.lists.push("Shopping");
+  const s0 = snap();
+  const now = Date.now();
+  const addedIds = [];
+  clean.forEach((title, idx) => {
+    const nid = uid("st");
+    addedIds.push(nid);
+    S.todos.push(Object.assign({
+      id: nid,
+      title: title.slice(0, 120),
+      list: "Shopping",
+      due: "",
+      notes: "",
+      priority: "normal",
+      done: false,
+      created: now + idx
+    }, share ? {} : { private: true }));
+  });
+  await save();
+  render();
+  if (addedIds.length === 1) {
+    if (navigator.onLine === false) toast("Added to Shopping. Choose a brand later, when you have signal.", "Undo", undoTo(s0));
+    else brandAsk(addedIds[0]);
+  } else {
+    toast(`Added ${addedIds.length} items to Shopping${share ? " (shared with Shane)." : "."}`, "Undo", undoTo(s0));
+  }
+  return addedIds;
+}
+async function quickAdd(e, forceList) {
   e.preventDefault();
-  const v = $('#newtodo').value.trim(); if (!v) return;
-  const share = !$('#shareshane') || $('#shareshane').checked;
-  const nid = uid('st'), nlist = todoFilter === 'All' ? S.lists[0] : todoFilter;
-  S.todos.push(Object.assign({ id: nid, title: v.slice(0, 120), list: nlist, due: '', notes: '', priority: 'normal', done: false, created: Date.now() }, share ? {} : { private: true }));
+  const inpEl = e.target && e.target.querySelector ? (e.target.querySelector("input,textarea") || $("#newtodo")) : $("#newtodo");
+  const v = inpEl ? inpEl.value.trim() : ""; if (!v) return;
+  const shareEl = (e.target && e.target.parentElement && e.target.parentElement.querySelector("#shareshane")) || $("#shareshane");
+  const share = !shareEl || shareEl.checked;
+  const nlist = forceList || (curPage() === "shopping" ? "Shopping" : (todoFilter === "All" ? S.lists[0] : todoFilter));
+  const parts = parseMultiShopItems(v);
+  if (parts.length > 1) {
+    if (isShop({ list: nlist })) {
+      await addShopBatch(parts, share);
+      return;
+    }
+    const s0 = snap(), now = Date.now();
+    parts.forEach((item, idx) => {
+      S.todos.push(Object.assign({ id: uid("st"), title: item.slice(0, 120), list: nlist, due: "", notes: "", priority: "normal", done: false, created: now + idx }, share ? {} : { private: true }));
+    });
+    await save(); render();
+    toast(`Added ${parts.length} items to ${nlist}${share ? " (Shane can see them too)." : "."}`, "Undo", undoTo(s0));
+    return;
+  }
+  const nid = uid("st");
+  S.todos.push(Object.assign({ id: nid, title: v.slice(0, 120), list: nlist, due: "", notes: "", priority: "normal", done: false, created: Date.now() }, share ? {} : { private: true }));
   await save(); render();
-  if (isShop({ list: nlist })) { if (navigator.onLine === false) toast('Added. Choose a brand later, when you have signal.'); else brandAsk(nid); return; }
-  $('#newtodo').focus(); toast(share ? 'Added. Shane can see it too.' : 'Added, just for you.');
+  if (isShop({ list: nlist })) { if (navigator.onLine === false) toast("Added. Choose a brand later, when you have signal."); else brandAsk(nid); return; }
+  if ($("#newtodo")) $("#newtodo").focus();
+  toast(share ? "Added. Shane can see it too." : "Added, just for you.");
+}
+const SHOP_STAPLES = [
+  ["🥛 Dairy & Fridge", ["Milk", "Butter", "Free-range Eggs", "Cheese", "Yoghurt", "Cream", "Sour Cream"]],
+  ["🍞 Bakery & GF", ["GF Bread", "Bread", "GF Wraps", "GF Pasta", "GF Crackers", "Rice", "Oats"]],
+  ["🍎 Fruit & Veg", ["Bananas", "Apples", "Avocados", "Tomatoes", "Potatoes", "Onions", "Lettuce", "Carrots", "Broccoli"]],
+  ["🥩 Meat & Dinner", ["Chicken Breast", "Beef Mince", "Bacon", "GF Sausages", "Salmon", "Ham"]],
+  ["🥫 Pantry & Drinks", ["Coffee", "Tea Bags", "Sugar", "Olive Oil", "Tinned Tomatoes", "Peanut Butter", "Sparkling Water"]],
+  ["🧻 Home & Pets", ["Toilet Paper", "Paper Towels", "Dish Liquid", "Laundry Powder", "Rubbish Bags", "Zeus Dog Food", "Cat Food (Mindy & Silken)"]]
+];
+let _shopMultiSelected = new Set();
+function shopMultiToggleChip(item, btn) {
+  if (_shopMultiSelected.has(item)) _shopMultiSelected.delete(item);
+  else _shopMultiSelected.add(item);
+  if (btn) btn.classList.toggle("on", _shopMultiSelected.has(item));
+  shopMultiUpdateCount();
+}
+function shopMultiUpdateCount() {
+  const ta = document.getElementById("shopmulti-ta");
+  const typed = ta ? parseMultiShopItems(ta.value) : [];
+  const all = new Set([...typed.map(x => x.toLowerCase()), ...[..._shopMultiSelected].map(x => x.toLowerCase())]);
+  const n = all.size;
+  const cntEl = document.getElementById("shopmulti-cnt");
+  if (cntEl) cntEl.textContent = n ? `Ready to add ${plural(n, "item")}` : "Type items or tap staples below";
+  const subBtn = document.querySelector("#sf .btns .btn.primary");
+  if (subBtn) subBtn.textContent = n > 0 ? `Add ${n} ${n === 1 ? "item" : "items"}` : "Add items";
+}
+function shopMultiSheet() {
+  _shopMultiSelected = new Set();
+  const existingOpen = new Set(S.todos.filter(t => isShop(t) && !t.done).map(t => t.title.toLowerCase().trim()));
+  const staplesHtml = SHOP_STAPLES.map(([cat, arr]) => `
+    <div style="margin-top:10px">
+      <div style="font-size:0.78rem;font-weight:800;color:var(--ink2);margin-bottom:6px">${esc(cat)}</div>
+      <div class="shop-chip-grid">
+        ${arr.map(item => {
+          const already = existingOpen.has(item.toLowerCase());
+          return `<button type="button" class="shop-pick-chip${already ? " already" : ""}" onclick="shopMultiToggleChip(${jsArg(item)}, this)"><span>${esc(item)}</span>${already ? "<small>on list</small>" : ""}</button>`;
+        }).join("")}
+      </div>
+    </div>`).join("");
+  openSheet(
+    "Add Multiple Shopping Items",
+    `<p class="muted" style="margin:-4px 2px 8px">Type or paste as many items as you like (separated by commas or new lines), or tap quick staples below. All items go straight onto your &amp; Shane’s shopping list.</p>
+    <div class="field">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span class="lbl" style="margin:0">Items to add</span>
+        <span id="shopmulti-cnt" class="pill fine" style="font-size:0.75rem">Type items or tap staples below</span>
+      </div>
+      <textarea name="items" id="shopmulti-ta" rows="4" placeholder="e.g. Milk, GF bread, eggs, apples&#10;or one item per line…" oninput="shopMultiUpdateCount()" style="width:100%;border-radius:12px;border:1px solid var(--fieldline);background:var(--field);color:var(--ink);padding:10px 12px;font:inherit;font-size:0.95rem;resize:vertical"></textarea>
+    </div>
+    <div style="margin:6px 0 10px">
+      <div style="font-size:0.84rem;font-weight:800;color:var(--brand)">Tap to select multiple staples at once:</div>
+      ${staplesHtml}
+    </div>
+    <label class="sharebox"><input type="checkbox" name="share" checked><span><b>Share with Shane</b><small>Shows on Shane’s shopping list too so either of you can pick them up.</small></span></label>`,
+    async v => {
+      const typed = parseMultiShopItems(v.items || "");
+      const combined = [...typed];
+      _shopMultiSelected.forEach(st => {
+        if (!combined.some(x => x.toLowerCase() === st.toLowerCase())) combined.push(st);
+      });
+      if (!combined.length) return "Please type at least one item or tap items above.";
+      const share = v.share === "on";
+      setTimeout(() => { addShopBatch(combined, share); }, 30);
+    },
+    "Add items"
+  );
+}
+function shopHomeSummaryCard() {
+  const open = S.todos.filter(t => isShop(t) && !t.done).sort(cmpOpenTodo);
+  const done = S.todos.filter(t => isShop(t) && t.done);
+  const preview = open.slice(0, 6).map(t => {
+    const b = t.brand && !t.brand.any ? t.brand.brand : "";
+    return `<span class="shop-mini-pill" onclick="event.stopPropagation();tick('${t.id}')" title="Tap to tick off">${shaneBadge(t)}🛒 ${esc(t.title)}${b ? ` <small>(${esc(b)})</small>` : ""}</span>`;
+  }).join("");
+  return `<div class="card shop-hero-card" id="shop-hero-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px; cursor:pointer" onclick="go('#shopping')">
+        <span class="aic" style="width:36px;height:36px;border-radius:10px;font-size:1.1rem">🛒</span>
+        <div>
+          <div style="font-weight:800;font-size:1.02rem;color:var(--ink)">Shopping List ${open.length ? `<span class="pill fine" style="margin-left:4px">${open.length} to get</span>` : `<span class="pill none" style="margin-left:4px">Empty</span>`}</div>
+          <div class="muted" style="font-size:0.78rem">Shared with Shane · add 1 or multiple items at once</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button type="button" class="btn primary small" onclick="shopMultiSheet()">+ Add multiple</button>
+        <button type="button" class="btn small" onclick="go('#shopping')">Open ›</button>
+      </div>
+    </div>
+    <form class="addbar" style="margin:10px 0 6px" onsubmit="quickAdd(event, 'Shopping')">
+      <input placeholder="Add 1 or multiple items (e.g. Milk, bread, eggs)…" autocomplete="off" enterkeyhint="done" maxlength="240" aria-label="Add shopping items">
+      <button aria-label="Add to Shopping">${I("plus")}</button>
+    </form>
+    ${open.length ? `<div class="shop-mini-list">${preview}${open.length > 6 ? `<button type="button" class="shop-mini-more" onclick="go('#shopping')">+${open.length - 6} more ›</button>` : ""}</div>` : `<div class="muted" style="font-size:0.8125rem;margin-top:2px">Nothing on the shopping list yet — type items above separated by commas or tap <b>+ Add multiple</b>.</div>`}
+  </div>`;
+}
+function Shopping() {
+  if (!S.lists.includes("Shopping")) S.lists.push("Shopping");
+  const open = S.todos.filter(t => isShop(t) && !t.done).sort(cmpOpenTodo);
+  const done = S.todos.filter(t => isShop(t) && t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+  const row = t => `<div class="row ${t.done ? "done" : ""}" data-id="${esc(t.id)}"><button type="button" class="tick" aria-label="${t.done ? "Mark not done" : "Mark complete"}: ${esc(t.title)}" onclick="tick('${t.id}')"><span>${I("check")}</span></button>
+    <button class="tapzone" onclick="todoForm('${t.id}')"><div class="tx"><div class="t">${shaneBadge(t)}${esc(t.title)}</div><div class="s">Shopping${t.private ? " · just me" : " · shared with Shane"}${t.done ? "" : todoPriMark(t)}${t.due && !t.done ? " · " + fmtW(t.due) : ""}</div>${t.brand ? `<div class="s brandline">${esc(brandLine(t.brand))}</div>` : ""}</div>
+    ${t.due && !t.done ? pill(daysLeft(t.due)) : ""}</button>${!t.done ? `<button type="button" class="brandbtn" onclick="brandAsk('${t.id}')">${t.brand ? "Brand ✓" : "Brand?"}</button>` : ""}</div>`;
+  const top = header("Shopping List", open.length ? plural(open.length, "item") + " to get · shared with Shane" : "Shopping list is clear", themeDots() + addBtn("Add multiple items", "shopMultiSheet()"));
+  const foot = `${themePicker()}
+    <div class="foot" id="syncline">${esc(syncLine())}<br>Items on Shopping automatically show on Shane’s shopping list too, with any brand you pick. Sarah’s To-do ${APP_VERSION}</div>`;
+  return top +
+    shaneShopCard() +
+    `<div class="card" style="margin-bottom:12px;border:1.5px solid var(--brand)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <div>
+          <b style="font-size:0.98rem">🛒 Quick Add (1 or Multiple Items)</b>
+          <div class="muted" style="font-size:0.8rem">Separate multiple items with commas (e.g. <i>Milk, bread, eggs, apples</i>) or tap <b>+ Add Multiple &amp; Staples</b>.</div>
+        </div>
+        <button type="button" class="btn primary small" onclick="shopMultiSheet()">+ Add Multiple &amp; Staples</button>
+      </div>
+      <form class="addbar" style="margin:0 0 8px" onsubmit="quickAdd(event, 'Shopping')">
+        <input id="newtodo" placeholder="e.g. Milk, GF bread, eggs, butter…" autocomplete="off" enterkeyhint="done" maxlength="300" aria-label="Add shopping items">
+        <button aria-label="Add">${I("plus")}</button>
+      </form>
+      <label class="sharechk" style="margin:0"><input type="checkbox" id="shareshane" checked> Share with Shane</label>
+    </div>` +
+    (open.length
+      ? `<div class="sec" style="margin-top:8px">To get (${open.length}) <button onclick="shopMultiSheet()">+ Add more</button></div><div class="list" id="openlist">${open.map(row).join("")}</div>`
+      : `<div class="card empty"><div class="t">Shopping list is empty</div><div class="s">Type multiple items above separated by commas, or tap below to pick from common staples.</div><button class="btn primary" onclick="shopMultiSheet()">+ Add Multiple Items</button></div>`) +
+    (done.length ? `<div class="sec">In the trolley / Done (${done.length}) <button onclick="clearShopDone()">Clear ticked</button></div><div class="list" id="donelist">${done.map(row).join("")}</div>` : "") +
+    foot;
+}
+function clearShopDone() {
+  const vis = S.todos.filter(t => t.done && isShop(t));
+  if (!vis.length) return;
+  confirmSheet("Clear ticked shopping items?", `${plural(vis.length, "ticked-off shopping item")} will be removed (from Shane’s list too).`, "Clear", async () => {
+    const s = snap(), ids = new Set(vis.map(t => t.id)); S.todos = S.todos.filter(t => !ids.has(t.id)); await save(); render(); toast("Cleared.", "Undo", undoTo(s));
+  });
 }
 async function tick(id) {
   const t = S.todos.find(x => x.id === id); if (!t) return;
@@ -844,7 +1034,7 @@ function shaneShopCard() {
     <div style="display:flex;flex-direction:column;gap:6px;flex:none"><button class="btn primary small" onclick="shaneShopSee()">See list</button><button class="btn small" onclick="shaneShopOk()">Got it</button></div></div>`;
 }
 function shaneShopOk() { const ids = shopSeen().concat(shaneShopNew().map(t => t.id)).slice(-300); try { localStorage.setItem(SEEN_SHANE, JSON.stringify(ids)); } catch (e) { } render(); }
-function shaneShopSee() { shaneShopOk(); try { setTodoFilter('Shopping'); } catch (e) { } }
+function shaneShopSee() { shaneShopOk(); try { go("#shopping"); } catch (e) { } }
 function notifyLater() { const o = noteSt(); o.hide = true; noteSave(o); render(); }
 function notifyLine() {
   if (!pushOk()) return '';
@@ -1026,8 +1216,8 @@ function schoolIcs(iso, what) {
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
   toast('Opening it in your calendar…');
 }
-const curPage = () => { const h = (location.hash || '').replace('#', ''); return h === 'school' ? 'school' : h === 'appts' || h === 'pets' ? 'appts' : 'todo'; };
-const pageTabs = () => `<div class="ptabs" role="tablist"><button role="tab" class="${curPage() === 'todo' ? 'on' : ''}" onclick="go('#todo')">${I('check')} To-do</button><button role="tab" class="${curPage() === 'appts' ? 'on' : ''}" onclick="go('#appts')">${I('paw')} Car, pets &amp; appts</button><button role="tab" class="${curPage() === 'school' ? 'on' : ''}" onclick="go('#school')">${I('school')} School</button></div>`;
+const curPage = () => { const h = (location.hash || "").replace("#", ""); return h === "shopping" || h === "shop" ? "shopping" : h === "school" ? "school" : h === "appts" || h === "pets" ? "appts" : "todo"; };
+const pageTabs = () => { const sc = S && S.todos ? S.todos.filter(t => isShop(t) && !t.done).length : 0; return `<div class="ptabs" role="tablist"><button role="tab" class="${curPage() === "todo" ? "on" : ""}" onclick="go('#todo')">${I("check")} To-do</button><button role="tab" class="${curPage() === "shopping" ? "on" : ""}" onclick="go('#shopping')">${I("cart")} Shopping${sc ? ` (${sc})` : ""}</button><button role="tab" class="${curPage() === "appts" ? "on" : ""}" onclick="go('#appts')">${I("paw")} Car &amp; pets</button><button role="tab" class="${curPage() === "school" ? "on" : ""}" onclick="go('#school')">${I("school")} School</button></div>`; };
 
 
 /* ================= CAR & APPOINTMENTS (1.4.0) =================
@@ -1931,7 +2121,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function render() {
   if (!S) return;
   let page = '';
-  try { page = curPage() === 'school' ? School() : curPage() === 'appts' ? Appts() : Todo(); } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
+  try { page = curPage() === "shopping" ? Shopping() : curPage() === "school" ? School() : curPage() === "appts" ? Appts() : Todo(); } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
   $('#view').innerHTML = pairCard() + greetCard() + remindBanner() + (curPage() === 'todo' ? schoolLineCard() + apptSoonLine() + carSoonLine() + petSoonLine() : '') + pageTabs() + installCard() + notifyCard() + (curPage() === 'todo' ? shaneShopCard() : '') + page;
 }
 window.addEventListener('hashchange', () => { if (!sheetOpen) { render(); window.scrollTo(0, 0); } });

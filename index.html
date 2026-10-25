@@ -358,7 +358,7 @@ html[data-theme="dark"] .ic.note{background:#1E3A5F;color:#BFDBFE}
 .pdfpv{flex:1;min-height:0;width:100%;overflow:auto;display:flex;justify-content:center;align-items:flex-start}.pdfpv canvas{max-width:100%;height:auto;background:#fff;border-radius:6px}
 .mxcard .cch{display:flex;align-items:center;gap:8px}.mxsug{align-items:flex-start}.mxsubj{font-size:0.75rem;opacity:.8}.mxpriv{font-size:0.75rem;margin:8px 0 0}
 .sugtag{display:inline-block;background:var(--brand);color:#fff;font-size:.7rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:6px;padding:1px 6px;vertical-align:2px}.sugbtn{color:var(--brand);font-weight:700;cursor:pointer}.sugbtn.off{color:var(--muted,#666)}
-/* 1.14.0 Pets & Trello-style option */
+/* 1.15.0 Pets & Trello-style option */
 .petsub{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--soft);margin-top:8px;cursor:pointer;text-align:left;width:100%}
 .petsub:hover{background:var(--soft2)}
 .petav{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:1.25rem;background:var(--brand2);flex:none}
@@ -383,7 +383,22 @@ html[data-layout="trello"] #app{max-width:100%}
 .tblist-b .row,.tblist-b .card{margin:0;border-radius:12px;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.07);border:1px solid var(--line)}
 .tbadd{margin-top:8px;width:100%;text-align:left;padding:9px 10px;border-radius:10px;font-weight:750;font-size:0.84375rem;color:var(--brand);background:rgba(255,255,255,.55);display:flex;align-items:center;gap:6px}
 .tbadd:hover{background:var(--card)}
-.tbadd .i{width:16px;height:16px}</style>
+.tbadd .i{width:16px;height:16px}
+/* 1.15.0 Shopping list & multi-item adder */
+.shop-hero-card{border:1.5px solid var(--brand);margin-bottom:12px;background:var(--card)}
+.shop-mini-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.shop-mini-pill{display:inline-flex;align-items:center;gap:4px;background:var(--soft2);border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:0.8125rem;font-weight:650;color:var(--ink);cursor:pointer}
+.shop-mini-pill:hover{border-color:var(--brand);background:var(--brand2)}
+.shop-mini-pill small{color:var(--brand);font-weight:700}
+.shop-mini-more{font-size:0.8125rem;font-weight:750;color:var(--brand);padding:4px 8px}
+.shop-chip-grid{display:flex;flex-wrap:wrap;gap:6px}
+.shop-pick-chip{display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border-radius:999px;background:var(--soft2);border:1.5px solid var(--line);font-size:0.82rem;font-weight:700;color:var(--ink);cursor:pointer;transition:all .12s}
+.shop-pick-chip.on{background:var(--brand);color:var(--onbrand);border-color:var(--brand);box-shadow:0 1px 4px rgba(0,0,0,.15)}
+.shop-pick-chip.on::before{content:"✓ ";font-weight:900}
+.shop-pick-chip.already{opacity:.72}
+.shop-pick-chip small{font-size:0.68rem;font-weight:600;opacity:.8;margin-left:2px}
+.ptabs button{font-size:0.82rem;padding:0 3px;gap:4px}
+</style>
 </head>
 <body>
 <div id="app">
@@ -392,7 +407,7 @@ html[data-layout="trello"] #app{max-width:100%}
 </div>
 <div id="sheet"></div>
 <div id="toast" role="status" aria-live="polite"><span id="toastmsg"></span><button id="toastbtn"></button></div>
-<script src="core.js?v=1.14.0"></script>
-<script src="app.js?v=1.14.0"></script>
+<script src="core.js?v=1.15.0"></script>
+<script src="app.js?v=1.15.0"></script>
 </body>
 </html>
